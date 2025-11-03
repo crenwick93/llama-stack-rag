@@ -1,0 +1,43 @@
+apiVersion: llamastack.io/v1alpha1
+kind: LlamaStackDistribution
+  name: lsd-llama-milvus-inline
+spec:
+  replicas: 1
+  server:
+    containerSpec:
+      env:
+        - name: INFERENCE_MODEL
+          valueFrom:
+            secretKeyRef:
+              key: INFERENCE_MODEL
+              name: llama-stack-inference-model-secret
+        - name: VLLM_MAX_TOKENS
+          value: '4096'
+        - name: VLLM_URL
+          valueFrom:
+            secretKeyRef:
+              key: VLLM_URL
+              name: llama-stack-inference-model-secret
+        - name: VLLM_TLS_VERIFY
+          valueFrom:
+            secretKeyRef:
+              key: VLLM_TLS_VERIFY
+              name: llama-stack-inference-model-secret
+        - name: VLLM_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: VLLM_API_TOKEN
+              name: llama-stack-inference-model-secret
+      name: llama-stack
+      port: 8321
+      resources:
+        limits:
+          cpu: 4
+          memory: 12Gi
+        requests:
+          cpu: 250m
+          memory: 500Mi
+    distribution:
+      image: rh-dev
+    userConfig:
+      configMapName: lsd-run
