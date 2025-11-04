@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rag-agent
+  labels:
+    app: rag-agent
+spec:
+  to:
+    kind: Service
+    name: rag-agent
+  port:
+    targetPort: http
+  # Optional TLS policy. Uncomment to enable edge-terminated TLS if your cluster supports it.
+  # tls:
+  #   termination: edge
+

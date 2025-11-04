@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-agent
+  labels:
+    app: rag-agent
+spec:
+  selector:
+    app: rag-agent
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+

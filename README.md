@@ -98,4 +98,85 @@ oc delete secret -n ${NS} llama-stack-inference-model-secret
 
 ---
 
-For advanced usage (RAG and agents), see the example notebooks in `notebooks/`.
+## RAG Agent service (headless API)
+
+This repo includes a minimal FastAPI service (`agent/app.py`) that connects to the running Llama Stack and exposes a simple `/ask` endpoint that uses the builtin RAG tool bound to the `confluence` vector DB.
+
+### Assumptions
+
+- **Llama Stack is running** using the manifests above (or equivalent) and reachable at the internal service URL used by the Deployment.
+- **Vector DB is populated** with your Confluence content and available under id `confluence` (as used in the service). For ingestion, see: [aiops-rag-ingestion](https://github.com/crenwick93/aiops-rag-ingestion).
+
+### Build and push image (macOS → amd64 cluster)
+
+- Podman:
+
+```bash
+export NS=default
+oc registry login
+REGISTRY=$(oc registry info)
+IMAGE="${REGISTRY}/${NS}/rag-agent:latest"
+
+podman build --arch amd64 -f agent/Containerfile -t "${IMAGE}" .
+podman push "${IMAGE}"
+```
+
+- Docker (buildx):
+
+```bash
+export NS=default
+oc registry login
+REGISTRY=$(oc registry info)
+IMAGE="${REGISTRY}/${NS}/rag-agent:latest"
+
+# Ensure buildx is enabled: docker buildx create --use
+docker buildx build --platform linux/amd64 -f agent/Containerfile -t "${IMAGE}" --push .
+```
+
+### Deploy on OpenShift
+
+```bash
+oc apply -n ${NS} -f openshift/agent/service.yaml
+oc apply -n ${NS} -f openshift/agent/deployment.yaml
+
+# Point Deployment to your pushed image (deployment has a placeholder image)
+oc -n ${NS} set image deployment/rag-agent rag-agent="${IMAGE}"
+
+# Optional: override env vars if needed
+oc -n ${NS} set env deployment/rag-agent \
+  LLAMA_BASE_URL="http://lsd-llama-milvus-inline-service.default.svc.cluster.local:8321" \
+  VECTOR_DB_ID="confluence"
+
+oc -n ${NS} rollout status deploy/rag-agent
+```
+
+### Test
+
+- Port-forward from your machine:
+
+```bash
+oc -n ${NS} port-forward svc/rag-agent 8080:8080 >/dev/null 2>&1 &
+sleep 2
+curl -s http://localhost:8080/healthz
+curl -s -X POST http://localhost:8080/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Summarise the resolution for disk full on /var"}'
+```
+
+- Or create a Route for external access:
+
+```bash
+oc apply -n ${NS} -f openshift/agent/route.yaml
+HOST=$(oc -n ${NS} get route rag-agent -o jsonpath='{.spec.host}')
+curl -s "http://${HOST}/healthz"
+```
+
+### Cleanup (agent service)
+
+```bash
+oc delete -n ${NS} -f openshift/agent/route.yaml || true
+oc delete -n ${NS} -f openshift/agent/deployment.yaml
+oc delete -n ${NS} -f openshift/agent/service.yaml
+```
+
+For hands-on exploration, see the workbench notebook `notebooks/rag_agent_workbench.ipynb`.
