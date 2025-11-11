@@ -6,7 +6,7 @@
     - servicenow.itsm.records:
         table: incident
         interval: 10
-        # Filter ONLY by assignment group; newest first to avoid the “oldest page first” trap
+        # Filter ONLY by assignment group ID; newest first to avoid the “oldest page first” trap
         sysparm_query: >
           assignment_group=91b12d5b53c72610a33138f0a0490e52^
           ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id
@@ -14,9 +14,9 @@
         - ansible.eda.json_filter:
         - ansible.eda.normalize_keys:
   rules:
-    # Debug helper: print the whole event for testing
-    - name: Show raw event
-      condition: "event.environment is defined"
+    # Debug helper: pretty-print the entire event (toggle by condition)
+    - name: Show event (pretty)
+      condition: event.meta is defined
       action:
-        debug:
-          msg: "{{ event }}"
+        print_event:
+          pretty: true

@@ -199,28 +199,10 @@ export AAP_HOSTNAME="https://aap.example.com"
 export AAP_TOKEN="REDACTED"
 ```
 
-Create the ServiceNow ITSM custom credential type:
+Create all CAAC objects (Credential Type, Project, Credentials) for both Controller and EDA:
 
 ```bash
-# Controller
-ansible-playbook ansible/caac/servicenow_credential_type.yml \
-  -e aap_configuration_dispatcher_roles='["controller_credential_types"]'
-
-# EDA
-ansible-playbook ansible/caac/servicenow_credential_type.yml \
-  -e aap_configuration_dispatcher_roles='["eda_credential_types"]'
-```
-
-Create the Git projects (Controller and EDA) pointing to this repo:
-
-```bash
-# Controller
-ansible-playbook ansible/caac/projects.yml \
-  -e aap_configuration_dispatcher_roles='["controller_projects"]'
-
-# EDA
-ansible-playbook ansible/caac/projects.yml \
-  -e aap_configuration_dispatcher_roles='["eda_projects"]'
+ansible-playbook ansible_deployment/caac/apply.yml
 ```
 
 Notes:
@@ -233,6 +215,16 @@ Reference:
 
 Tip:
 - If you prefer ansible-playbook with local collections, install them however you like (e.g. ansible-galaxy collection install …). This repo no longer ships a collections/requirements.yml so AAP Controller will not attempt dependency installs during Project sync. Use an EE that includes the collections, or manage them separately.
+
+### EDA access to Controller (token credential)
+- The EDA rulebook activation needs access to AAP Controller to launch job templates.
+- We create an EDA credential of type “Red Hat Ansible Automation Platform” using your `AAP_HOSTNAME` and `AAP_TOKEN`:
+  - Name: AAP Controller
+  - Inputs:
+    - host: `AAP_HOSTNAME` with `/api/controller/` appended (e.g., `https://<gateway>/api/controller/`)
+    - oauth_token: `AAP_TOKEN`
+    - verify_ssl: `AAP_VALIDATE_CERTS` (default true)
+- Ensure you export `AAP_TOKEN` before running the CAAC playbook. The activation attaches this credential along with the ServiceNow ITSM credential so both ServiceNow and Controller access are available at runtime.
 
 ### What it creates
 - Name: ServiceNow ITSM Credential

@@ -1,0 +1,122 @@
+---
+# All CAAC objects live here. apply.yml loads this file and runs dispatch.
+
+# Controller custom credential types
+controller_credential_types:
+  - name: "ServiceNow ITSM Credential"
+    description: "Description of your credential type"
+    kind: "cloud"
+    inputs:
+      fields:
+        - id: instance
+          type: string
+          label: Instance
+        - id: username
+          type: string
+          label: Username
+        - id: password
+          type: string
+          label: Password
+          secret: true
+      required:
+        - instance
+        - username
+        - password
+    injectors:
+      env:
+        SN_HOST: !unsafe "{{ instance }}"
+        SN_USERNAME: !unsafe "{{ username }}"
+        SN_PASSWORD: !unsafe "{{ password }}"
+
+# EDA custom credential types
+eda_credential_types:
+  - name: "ServiceNow ITSM Credential"
+    description: "Description of your credential type"
+    kind: "cloud"
+    inputs:
+      fields:
+        - id: instance
+          type: string
+          label: Instance
+        - id: username
+          type: string
+          label: Username
+        - id: password
+          type: string
+          label: Password
+          secret: true
+      required:
+        - instance
+        - username
+        - password
+    injectors:
+      env:
+        SN_HOST: !unsafe "{{ instance }}"
+        SN_USERNAME: !unsafe "{{ username }}"
+        SN_PASSWORD: !unsafe "{{ password }}"
+
+# Controller projects
+controller_projects:
+  - name: "llama-stack-rag"
+    description: "Demo project for Llama Stack RAG"
+    organization: "{{ aap_org }}"
+    scm_type: "git"
+    scm_url: "https://github.com/crenwick93/llama-stack-rag.git"
+    scm_branch: "main"
+    scm_update_on_launch: true
+
+# EDA projects
+eda_projects:
+  - name: "llama-stack-rag"
+    description: "Demo project for Llama Stack RAG"
+    organization: "{{ aap_org }}"
+    scm_type: "git"
+    scm_url: "https://github.com/crenwick93/llama-stack-rag.git"
+    scm_branch: "main"
+    scm_update_on_launch: true
+    sync: true
+
+# Controller credentials (ServiceNow, using the custom type)
+controller_credentials:
+  - name: "ServiceNow ITSM"
+    description: "ServiceNow ITSM credential"
+    organization: "{{ aap_org }}"
+    credential_type: "ServiceNow ITSM Credential"
+    inputs:
+      instance: "{{ sn_instance }}"
+      username: "{{ sn_username }}"
+      password: "{{ sn_password }}"
+
+# EDA credentials (ServiceNow, using the custom type)
+eda_credentials:
+  - name: "ServiceNow ITSM"
+    description: "ServiceNow ITSM credential"
+    organization: "{{ aap_org }}"
+    credential_type: "ServiceNow ITSM Credential"
+    inputs:
+      instance: "{{ sn_instance }}"
+      username: "{{ sn_username }}"
+      password: "{{ sn_password }}"
+  - name: "AAP Controller"
+    description: "Token credential for connecting EDA to Controller"
+    organization: "{{ aap_org }}"
+    credential_type: "Red Hat Ansible Automation Platform"
+    inputs:
+      host: "{{ (aap_hostname | regex_replace('/+$','')) ~ '/api/controller/' }}"
+      oauth_token: "{{ aap_token }}"
+      verify_ssl: "{{ aap_validate_certs }}"
+
+# EDA rulebook activations
+eda_rulebook_activations:
+  - name: "snow-incidents"
+    description: "Monitor and print ServiceNow incident events"
+    organization: "{{ aap_org }}"
+    project: "llama-stack-rag"
+    rulebook: "rulebooks/snow_incidents.yml"
+    decision_environment: "Default Decision Environment"
+    credentials:
+      - "ServiceNow ITSM"
+      - "AAP Controller"
+    enabled: true
+
+
