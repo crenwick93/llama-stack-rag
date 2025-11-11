@@ -180,3 +180,139 @@ oc delete -n ${NS} -f openshift/agent/service.yaml
 ```
 
 For hands-on exploration, see the workbench notebook `notebooks/rag_agent_workbench.ipynb`.
+
+## ServiceNow ITSM custom credential type (AAP Controller and EDA)
+
+This repo includes an Ansible playbook to create a ServiceNow ITSM custom Credential Type in Ansible Automation Platform (AAP) Controller using the `infra.aap_configuration` collection.
+
+### Config-as-Code (CAAC) deployment quickstart
+
+Prereqs:
+- Export an Automation Hub token:
+
+```bash
+export ANSIBLE_GALAXY_SERVER_AUTOMATION_HUB_TOKEN="YOUR_OFFLINE_TOKEN"
+```
+
+- Install collections:
+
+```bash
+ansible-galaxy collection install -r collections/requirements.yml
+```
+
+- Export AAP gateway auth (AAP 2.5+ uses a single URL/token for Controller and EDA):
+
+```bash
+export AAP_HOSTNAME="https://aap.example.com"
+export AAP_TOKEN="REDACTED"
+```
+
+Create the ServiceNow ITSM custom credential type:
+
+```bash
+# Controller
+ansible-playbook ansible/caac/servicenow_credential_type.yml \
+  -e aap_configuration_dispatcher_roles='["controller_credential_types"]'
+
+# EDA
+ansible-playbook ansible/caac/servicenow_credential_type.yml \
+  -e aap_configuration_dispatcher_roles='["eda_credential_types"]'
+```
+
+Create the Git projects (Controller and EDA) pointing to this repo:
+
+```bash
+# Controller
+ansible-playbook ansible/caac/projects.yml \
+  -e aap_configuration_dispatcher_roles='["controller_projects"]'
+
+# EDA
+ansible-playbook ansible/caac/projects.yml \
+  -e aap_configuration_dispatcher_roles='["eda_projects"]'
+```
+
+Notes:
+- You can override defaults with:
+  - `-e project_branch=<branch>` or `-e project_org=<org>`
+- The credential type injectors are defined so placeholders are stored literally in both Controller and EDA.
+
+Reference:
+- infra.aap_configuration collection: https://github.com/redhat-cop/infra.aap_configuration/tree/devel/roles/eda_credential_types
+
+### What it creates
+- Name: ServiceNow ITSM Credential
+- Inputs:
+  - instance (string)
+  - username (string)
+  - password (string, secret: true)
+- Injectors (env):
+  - SN_HOST='{{instance}}'
+  - SN_USERNAME='{{username}}'
+  - SN_PASSWORD='{{password}}'
+
+### Prerequisites
+- AAP 2.5+ (tested with 2.6)
+- Collection installed:
+
+```bash
+ansible-galaxy collection install infra.aap_configuration
+```
+
+- Auth to AAP provided via environment variables or extra vars:
+  - AAP_HOSTNAME (e.g., https://aap.example.com)
+  - AAP_TOKEN (OAuth token)
+  - AAP_VALIDATE_CERTS (optional, default true)
+
+### Create in AAP Controller (Config-as-Code)
+Run the bundled playbook:
+
+```bash
+export AAP_HOSTNAME="https://aap.example.com"
+export AAP_TOKEN="REDACTED"
+# export AAP_VALIDATE_CERTS=false   # if needed
+
+ansible-playbook ansible/caac/servicenow_credential_type.yml
+```
+
+This uses the `infra.aap_configuration.dispatch` role and `aap_credential_types` data model to create the custom Credential Type in Controller.
+
+### Event-Driven Ansible (EDA)
+For this demo, you also need the same custom Credential Type in the EDA controller:
+
+- Option A (UI): In EDA, navigate to Automation Decisions → Infrastructure → Credential Types and create the same type with the inputs/injectors shown above.
+
+- Option B (Config-as-Code): Extend the playbook to include an EDA block using the same definition (the `infra.aap_configuration` collection includes EDA roles). For example:
+
+```yaml
+# Snippet to add under vars: in ansible/caac/servicenow_credential_type.yml
+eda_credential_types:
+  - name: "ServiceNow ITSM Credential"
+    description: "Description of your credential type"
+    kind: "cloud"
+    inputs:
+      fields:
+        - id: instance
+          type: string
+          label: Instance
+        - id: username
+          type: string
+          label: Username
+        - id: password
+          type: string
+          label: Password
+          secret: true
+      required:
+        - instance
+        - username
+        - password
+    injectors:
+      env:
+        SN_HOST: "{{ instance }}"
+        SN_USERNAME: "{{ username }}"
+        SN_PASSWORD: "{{ password }}"
+```
+
+You can reuse the same platform OAuth token if your setup centralizes API access, otherwise provide credentials appropriate for the EDA API endpoint.
+
+### Reference
+- infra.aap_configuration collection: `https://github.com/redhat-cop/infra.aap_configuration`

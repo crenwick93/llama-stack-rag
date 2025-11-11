@@ -1,0 +1,22 @@
+---
+- name: Monitor incidents in ServiceNow
+  hosts: all
+  execution_strategy: parallel
+  sources:
+    - servicenow.itsm.records:
+        table: incident
+        interval: 10
+        # Filter ONLY by assignment group; newest first to avoid the “oldest page first” trap
+        sysparm_query: >
+          assignment_group=91b12d5b53c72610a33138f0a0490e52^
+          ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id
+      filters:
+        - ansible.eda.json_filter:
+        - ansible.eda.normalize_keys:
+  rules:
+    # 0) Debug helper: print the whole event for testing
+    # - name: Show raw event
+    #   condition: "event.environment is defined"
+    #   action:
+    #     debug:
+    #       msg: "{{ event }}"
