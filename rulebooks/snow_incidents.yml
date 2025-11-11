@@ -14,9 +14,9 @@
         - ansible.eda.json_filter:
         - ansible.eda.normalize_keys:
   rules:
-    # 0) Debug helper: print the whole event for testing
-    # - name: Show raw event
-    #   condition: "event.environment is defined"
-    #   action:
-    #     debug:
-    #       msg: "{{ event }}"
+    # Debug helper: print the whole event for testing
+    - name: Show raw event
+      condition: "event.environment is defined"
+      action:
+        debug:
+          msg: "{{ event }}"
