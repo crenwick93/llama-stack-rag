@@ -188,18 +188,10 @@ This repo includes an Ansible playbook to create a ServiceNow ITSM custom Creden
 ### Config-as-Code (CAAC) deployment quickstart
 
 Prereqs:
-- Export an Automation Hub token:
-
-```bash
-export ANSIBLE_GALAXY_SERVER_AUTOMATION_HUB_TOKEN="YOUR_OFFLINE_TOKEN"
-```
-
-- Install collections:
-
-```bash
-ansible-galaxy collection install -r collections/requirements.yml
-```
-
+- Ensure these collections are available (via your Execution Environment or local install):
+  - infra.aap_configuration
+  - ansible.controller
+  - ansible.eda
 - Export AAP gateway auth (AAP 2.5+ uses a single URL/token for Controller and EDA):
 
 ```bash
@@ -238,6 +230,9 @@ Notes:
 
 Reference:
 - infra.aap_configuration collection: https://github.com/redhat-cop/infra.aap_configuration/tree/devel/roles/eda_credential_types
+
+Tip:
+- If you prefer ansible-playbook with local collections, install them however you like (e.g. ansible-galaxy collection install …). This repo no longer ships a collections/requirements.yml so AAP Controller will not attempt dependency installs during Project sync. Use an EE that includes the collections, or manage them separately.
 
 ### What it creates
 - Name: ServiceNow ITSM Credential
