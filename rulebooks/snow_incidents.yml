@@ -6,7 +6,7 @@
     - servicenow.itsm.records:
         table: incident
         interval: 10
-        remote_servicenow_timezone: "America/Los_Angeles"
+        remote_servicenow_timezone: "Europe/London"
         # Filter ONLY by assignment group ID; newest first to avoid the “oldest page first” trap
         # sysparm_query: >
         #   assignment_group=9ef342be53a03210a33138f0a0490e85^
