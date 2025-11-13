@@ -8,3 +8,4 @@ openshift/llama-stack/config/providers.yaml
 
 collections/*
 !collections/requirements.yml
+context

@@ -6,6 +6,7 @@
     - servicenow.itsm.records:
         table: incident
         interval: 10
+        remote_servicenow_timezone: "UTC"
         # Filter ONLY by assignment group ID; newest first to avoid the “oldest page first” trap
         sysparm_query: >
           assignment_group=91b12d5b53c72610a33138f0a0490e52^

@@ -226,6 +226,53 @@ Tip:
     - verify_ssl: `AAP_VALIDATE_CERTS` (default true)
 - Ensure you export `AAP_TOKEN` before running the CAAC playbook. The activation attaches this credential along with the ServiceNow ITSM credential so both ServiceNow and Controller access are available at runtime.
 
+### Custom EDA Decision Environment with ServiceNow collection
+- The supported Decision Environment images do not include all collections. For the ServiceNow source, build a custom DE that includes `servicenow.itsm` (and `ansible.eda`).
+- A sample definition is included at `ansible_deployment/eda/decision-environment.yml`.
+
+Build and push (Podman):
+```bash
+podman login registry.redhat.io
+
+# Choose a destination for your image
+REG="<your-registry>/<namespace>"
+IMAGE="${REG}/eda-de:latest"
+
+ansible-builder build \
+  -f ansible_deployment/eda/decision-environment.yml \
+  -t "${IMAGE}" \
+  --container-runtime podman
+
+podman push "${IMAGE}"
+```
+
+Then in EDA, create/update the Decision Environment to use `${IMAGE}` and ensure your activation in `ansible_deployment/caac/vars.yml` points to that Decision Environment name (edit `decision_environment` if needed).
+
+macOS (Apple Silicon) note:
+- If you build on an M1/M2 Mac, you must build an amd64 image or EDA will fail with "Exec format error".
+- Build for amd64:
+  - Podman (single-step):
+    ```bash
+    ansible-builder build \
+      -f ansible_deployment/eda/decision-environment.yml \
+      -t "${IMAGE}" \
+      --container-runtime podman \
+      --extra-build-cli-args="--arch=amd64"
+    podman push "${IMAGE}"
+    ```
+  - Docker (single-step):
+    ```bash
+    ansible-builder build \
+      -f ansible_deployment/eda/decision-environment.yml \
+      -t "${IMAGE}" \
+      --container-runtime docker \
+      --extra-build-cli-args="--platform=linux/amd64"
+    docker push "${IMAGE}"
+    ```
+- Optional: verify image architecture
+  ```bash
+  podman manifest inspect "${IMAGE}" | grep -nA1 architecture
+  ```
 ### What it creates
 - Name: ServiceNow ITSM Credential
 - Inputs:

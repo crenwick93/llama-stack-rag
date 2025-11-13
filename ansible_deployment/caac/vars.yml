@@ -3,57 +3,57 @@
 
 # Controller custom credential types
 controller_credential_types:
-  - name: "ServiceNow ITSM Credential"
+  - name: "ServiceNow Credential"
     description: "Description of your credential type"
     kind: "cloud"
     inputs:
       fields:
-        - id: instance
+        - id: SN_HOST
           type: string
-          label: Instance
-        - id: username
+          label: Snow Instance
+        - id: SN_USERNAME
           type: string
           label: Username
-        - id: password
+        - id: SN_PASSWORD
           type: string
           label: Password
           secret: true
       required:
-        - instance
-        - username
-        - password
+        - SN_HOST
+        - SN_USERNAME
+        - SN_PASSWORD
     injectors:
       env:
-        SN_HOST: !unsafe "{{ instance }}"
-        SN_USERNAME: !unsafe "{{ username }}"
-        SN_PASSWORD: !unsafe "{{ password }}"
+        SN_HOST: !unsafe "{{ SN_HOST }}"
+        SN_USERNAME: !unsafe "{{ SN_USERNAME }}"
+        SN_PASSWORD: !unsafe "{{ SN_PASSWORD }}"
 
 # EDA custom credential types
 eda_credential_types:
-  - name: "ServiceNow ITSM Credential"
+  - name: "ServiceNow Credential"
     description: "Description of your credential type"
     kind: "cloud"
     inputs:
       fields:
-        - id: instance
+        - id: SN_HOST
           type: string
-          label: Instance
-        - id: username
+          label: Snow Instance
+        - id: SN_USERNAME
           type: string
           label: Username
-        - id: password
+        - id: SN_PASSWORD
           type: string
           label: Password
           secret: true
       required:
-        - instance
-        - username
-        - password
+        - SN_HOST
+        - SN_USERNAME
+        - SN_PASSWORD
     injectors:
       env:
-        SN_HOST: !unsafe "{{ instance }}"
-        SN_USERNAME: !unsafe "{{ username }}"
-        SN_PASSWORD: !unsafe "{{ password }}"
+        SN_HOST: !unsafe "{{ SN_HOST }}"
+        SN_USERNAME: !unsafe "{{ SN_USERNAME }}"
+        SN_PASSWORD: !unsafe "{{ SN_PASSWORD }}"
 
 # Controller projects
 controller_projects:
@@ -81,22 +81,22 @@ controller_credentials:
   - name: "ServiceNow ITSM"
     description: "ServiceNow ITSM credential"
     organization: "{{ aap_org }}"
-    credential_type: "ServiceNow ITSM Credential"
+    credential_type: "ServiceNow Credential"
     inputs:
-      instance: "{{ sn_instance }}"
-      username: "{{ sn_username }}"
-      password: "{{ sn_password }}"
+      SN_HOST: "{{ sn_instance }}"
+      SN_USERNAME: "{{ sn_username }}"
+      SN_PASSWORD: "{{ sn_password }}"
 
 # EDA credentials (ServiceNow, using the custom type)
 eda_credentials:
   - name: "ServiceNow ITSM"
     description: "ServiceNow ITSM credential"
     organization: "{{ aap_org }}"
-    credential_type: "ServiceNow ITSM Credential"
+    credential_type: "ServiceNow Credential"
     inputs:
-      instance: "{{ sn_instance }}"
-      username: "{{ sn_username }}"
-      password: "{{ sn_password }}"
+      SN_HOST: "{{ sn_instance }}"
+      SN_USERNAME: "{{ sn_username }}"
+      SN_PASSWORD: "{{ sn_password }}"
   - name: "AAP Controller"
     description: "Token credential for connecting EDA to Controller"
     organization: "{{ aap_org }}"
@@ -106,14 +106,23 @@ eda_credentials:
       oauth_token: "{{ aap_token }}"
       verify_ssl: "{{ aap_validate_certs }}"
 
+# EDA Decision Environments
+eda_decision_environments:
+  - name: "snow-de"
+    description: "Decision Environment with ServiceNow collection"
+    organization: "{{ aap_org }}"
+    image_url: "quay.io/crenwick93/snow-de:latest"
+    # If your registry requires auth, add:
+    # credential: "<registry-credential-name>"
+
 # EDA rulebook activations
 eda_rulebook_activations:
   - name: "snow-incidents"
     description: "Monitor and print ServiceNow incident events"
     organization: "{{ aap_org }}"
     project: "llama-stack-rag"
-    rulebook: "rulebooks/snow_incidents.yml"
-    decision_environment: "Default Decision Environment"
+    rulebook: "snow_incidents.yml"
+    decision_environment: "snow-de"
     credentials:
       - "ServiceNow ITSM"
       - "AAP Controller"
