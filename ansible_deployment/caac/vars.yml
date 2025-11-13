@@ -127,5 +127,6 @@ eda_rulebook_activations:
       - "ServiceNow ITSM"
       - "AAP Controller"
     enabled: true
+    log_level: "debug"
 
 
