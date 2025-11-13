@@ -9,7 +9,7 @@
         remote_servicenow_timezone: "UTC"
         # Filter ONLY by assignment group ID; newest first to avoid the “oldest page first” trap
         sysparm_query: >
-          assignment_group=91b12d5b53c72610a33138f0a0490e52^
+          assignment_group=9ef342be53a03210a33138f0a0490e85^
           ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id
       filters:
         - ansible.eda.json_filter:

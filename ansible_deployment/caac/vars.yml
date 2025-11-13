@@ -123,7 +123,7 @@ eda_rulebook_activations:
     project: "llama-stack-rag"
     rulebook: "snow_incidents.yml"
     decision_environment: "snow-de"
-    credentials:
+    eda_credentials:
       - "ServiceNow ITSM"
       - "AAP Controller"
     enabled: true
