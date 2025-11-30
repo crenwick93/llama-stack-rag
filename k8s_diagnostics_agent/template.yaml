@@ -1,0 +1,118 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: k8s-diagnostics-agent-template
+  annotations:
+    description: "Parametrized deployment of the K8s Diagnostics Agent (MCP + RAG)"
+parameters:
+  - name: NAMESPACE
+    description: "Target OpenShift project/namespace to deploy into"
+    value: "llama-stack-demo"
+  - name: LLAMA_BASE_URL
+    description: "Base URL for the Llama Stack service (cluster-internal or external)"
+    value: "http://lsd-llama-milvus-inline-service.default.svc.cluster.local:8321"
+  - name: VECTOR_STORE_IDS
+    description: "Optional: comma-separated vector store IDs for file_search"
+    value: ""
+  - name: VECTOR_DB_ID
+    description: "Optional: single vector DB ID (fallback if VECTOR_STORE_IDS empty)"
+    value: ""
+  - name: MCP_SERVER_URL
+    description: "MCP server SSE endpoint URL"
+    value: "http://kubernetes-mcp-server.llama-stack-demo.svc.cluster.local:8080/sse"
+  - name: MCP_SERVER_LABEL
+    description: "Label/name for the MCP server"
+    value: "kubernetes-mcp"
+  - name: APP_BUILD_STAMP
+    description: "Forcing rollout by changing pod template on each deploy (timestamp/hash)"
+    value: ""
+objects:
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: k8-diagnostics-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: k8-diagnostics-agent
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: k8-diagnostics-agent
+      template:
+        metadata:
+          labels:
+            app: k8-diagnostics-agent
+        spec:
+          containers:
+            - name: k8-diagnostics-agent
+              image: image-registry.openshift-image-registry.svc:5000/${NAMESPACE}/k8-diagnostics-agent:latest
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 8080
+                  name: http
+              env:
+                - name: LLAMA_BASE_URL
+                  value: "${LLAMA_BASE_URL}"
+                - name: VECTOR_STORE_IDS
+                  value: "${VECTOR_STORE_IDS}"
+                - name: VECTOR_DB_ID
+                  value: "${VECTOR_DB_ID}"
+                - name: MCP_SERVER_URL
+                  value: "${MCP_SERVER_URL}"
+                - name: MCP_SERVER_LABEL
+                  value: "${MCP_SERVER_LABEL}"
+                - name: APP_BUILD_STAMP
+                  value: "${APP_BUILD_STAMP}"
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: k8-diagnostics-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: k8-diagnostics-agent
+    spec:
+      selector:
+        app: k8-diagnostics-agent
+      ports:
+        - name: http
+          port: 8080
+          targetPort: 8080
+
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: k8-diagnostics-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: k8-diagnostics-agent
+    spec:
+      to:
+        kind: Service
+        name: k8-diagnostics-agent
+      port:
+        targetPort: http
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+

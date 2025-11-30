@@ -1,15 +1,11 @@
-"""RAG Agent service
+"""MCP Agent service
 
-This FastAPI service connects to a running Llama Stack instance, creates a
-lightweight agent that can use the builtin RAG tool bound to a specific
-vector DB, and exposes two endpoints:
+This FastAPI service connects to a running Llama Stack instance and creates a
+lightweight agent that can use an MCP tool group (e.g., mcp::kubernetes).
+It exposes two endpoints:
 
-- GET /healthz: quick health probe (used by readiness/liveness checks)
+- GET /healthz: quick health probe
 - POST /ask: ask a question and get a response from the agent
-
-The service is intentionally simple for educational purposes: clear logs,
-minimal configuration, and sensible defaults that match the accompanying
-notebook and OpenShift manifests.
 """
 
 import os
@@ -24,27 +20,19 @@ from llama_stack_client import LlamaStackClient, Agent
 import uuid
 
 
-# Configure logging: default to INFO; can be overridden via LOG_LEVEL env var
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-logger = logging.getLogger("rag-agent-service")
+logger = logging.getLogger("mcp-agent-service")
 
 
 class SuppressHealthzFilter(logging.Filter):
-    """Drop noisy /healthz access logs from uvicorn.
-
-    OpenShift health probes hit /healthz frequently. Suppressing those
-    access lines keeps the logs focused on educational, high-signal events.
-    """
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        # Suppress noisy access log lines for health probes
         if " /healthz " in msg or "GET /healthz" in msg:
             return False
         return True
 
 
-# Reduce noise from uvicorn access logs but keep others
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.addFilter(SuppressHealthzFilter())
 
@@ -69,11 +57,7 @@ def get_env(name: str, default: Optional[str] = None) -> str:
 
 @lru_cache(maxsize=1)
 def get_client() -> LlamaStackClient:
-    """Create a singleton Llama Stack client.
-
-    Uses LLAMA_BASE_URL (defaults to the internal service URL from the
-    OpenShift deployment). Trailing slash is trimmed for consistency.
-    """
+    """Create a singleton Llama Stack client."""
     base_url = os.getenv(
         "LLAMA_BASE_URL",
         "http://lsd-llama-milvus-inline-service.default.svc.cluster.local:8321",
@@ -83,8 +67,7 @@ def get_client() -> LlamaStackClient:
 
 
 def select_model(client: LlamaStackClient) -> str:
-    """Pick an LLM identifier, preferring the vLLM-backed provider if present."""
-    # Prefer vLLM provider if available, else first LLM
+    """Pick an LLM identifier, preferring vLLM-backed provider if present."""
     models = list(client.models.list())
     preferred = next((m for m in models if m.model_type == "llm" and getattr(m, "provider_id", None) == "vllm-inference"), None)
     if preferred:
@@ -96,50 +79,45 @@ def select_model(client: LlamaStackClient) -> str:
 
 
 @lru_cache(maxsize=1)
-def get_vector_store_ids() -> list[str]:
-    """Return vector_store_ids for file_search using env.
-
-    Preferred: VECTOR_STORE_IDS (comma-separated).
-    Backward-compatible: VECTOR_DB_ID (single id).
-    """
-    raw = os.getenv("VECTOR_STORE_IDS", "").strip()
-    if not raw:
-        single = os.getenv("VECTOR_DB_ID", "").strip()
-        if single:
-            logger.info("Using VECTOR_DB_ID=%s", single)
-            return [single]
-        return []
-    ids = [s.strip() for s in raw.split(",") if s.strip()]
-    logger.info("Using VECTOR_STORE_IDS=%s", ids)
-    return ids
-
-
-@lru_cache(maxsize=1)
-def get_agent_config() -> tuple[LlamaStackClient, Agent, str, list[str]]:
-    """Initialize the agent and cache it with its model and vector store ids.
- 
-    Returns a tuple of (client, agent, model_id, vector_store_ids).
-    """
+def get_agent_config() -> tuple[LlamaStackClient, Agent, str]:
+    """Initialize the MCP-enabled agent and cache it with its model."""
     client = get_client()
     model_id = select_model(client)
-    vector_store_ids = get_vector_store_ids()
+
+    # Configure MCP connectivity
+    # Prefer explicit MCP server URL/label if provided; otherwise fall back to tool group id for future compatibility.
+    mcp_server_url = os.getenv(
+        "MCP_SERVER_URL",
+        "http://kubernetes-mcp-server.llama-stack-demo.svc.cluster.local:8080/sse",
+    )
+    mcp_server_label = os.getenv("MCP_SERVER_LABEL", "kubernetes")
+    mcp_toolgroup = os.getenv("MCP_TOOLGROUP_ID", "mcp::kubernetes")
 
     instructions = (
-        "You are a helpful assistant. Use the RAG tool when appropriate and cite source_url(s)."
+        "You are a helpful assistant. Use the MCP tools when appropriate and be explicit about actions taken."
     )
 
-    tools_spec: list[dict] = []
-    if vector_store_ids:
-        tools_spec.append({"type": "file_search", "vector_store_ids": vector_store_ids})
-    agent = Agent(client, model=model_id, instructions=instructions, tools=tools_spec)
+    # Build tools spec compatible with current client: explicit 'mcp' tool with server details
+    tools_spec: list[dict] = [{
+        "type": "mcp",
+        "mcp": {
+            "server_label": mcp_server_label,
+            "server_url": mcp_server_url,
+        },
+    }]
+    agent = Agent(
+        client,
+        model=model_id,
+        instructions=instructions,
+        tools=tools_spec,
+    )
 
-    logger.info("Agent initialized: model=%s vector_store_ids=%s tools=%s", model_id, vector_store_ids, "file_search")
-    return client, agent, model_id, vector_store_ids
+    logger.info("MCP Agent initialized: model=%s tools=%s", model_id, mcp_toolgroup)
+    return client, agent, model_id
 
 
 def extract_answer_text(result) -> str:
     """Extract plain text from a Llama Stack Responses API result."""
-    # Typed ResponseObject path
     try:
         if hasattr(result, "output") and result.output:
             for item in reversed(result.output):
@@ -150,16 +128,13 @@ def extract_answer_text(result) -> str:
                         text = getattr(content, "text", None)
                         if text:
                             return text
-        # Some versions expose a convenience 'output_text'
         if hasattr(result, "output_text"):
             output_text = getattr(result, "output_text")
             if isinstance(output_text, str) and output_text:
                 return output_text
     except Exception:
         pass
-    # Dict (OpenAI-compatible) path
     if isinstance(result, dict):
-        # Chat completions style
         choices = result.get("choices")
         if choices:
             msg = choices[0].get("message", {})
@@ -167,7 +142,6 @@ def extract_answer_text(result) -> str:
                 text = msg.get("content")
                 if text:
                     return text
-        # Responses API style
         output = result.get("output")
         if isinstance(output, list):
             for item in reversed(output):
@@ -176,21 +150,18 @@ def extract_answer_text(result) -> str:
                         text = c.get("text")
                         if text:
                             return text
-    # Fallback: stringify
     return str(result)
 
 
-app = FastAPI(title="RAG Agent Service", version="0.1.0")
+app = FastAPI(title="MCP Agent Service", version="0.1.0")
 
 
 @app.get("/healthz")
 def healthz() -> dict:
-    """Lightweight health endpoint used by readiness/liveness probes."""
     try:
-        client, _, model_id, vector_store_ids = get_agent_config()
-        # Lightweight check: list 1 model if possible
+        client, _, model_id = get_agent_config()
         _ = model_id or select_model(client)
-        return {"status": "ok", "model": model_id, "vector_store_ids": vector_store_ids}
+        return {"status": "ok", "model": model_id}
     except Exception as exc:
         logger.exception("Health check failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -198,26 +169,20 @@ def healthz() -> dict:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest) -> AskResponse:
-    """Ask the agent a question.
-
-    - Validates input
-    - Ensures a session exists (creates one if not provided)
-    - Performs a single non-streaming turn and returns the full answer
-    """
     if not req.question or not req.question.strip():
         raise HTTPException(status_code=400, detail="question must be a non-empty string")
 
     try:
-        client, agent, model_id, _ = get_agent_config()
+        client, agent, model_id = get_agent_config()
         request_id = uuid.uuid4().hex[:8]
         preview = req.question.strip().replace("\n", " ")
         if len(preview) > 120:
             preview = preview[:117] + "..."
         logger.info("ASK start rid=%s model=%s has_session=%s question=\"%s\"", request_id, model_id, bool(req.session_id), preview)
+
         if req.session_id:
             session_id = req.session_id
         else:
-            # Create a session with a generated name and robustly extract the id
             session_name = f"s{uuid.uuid4().hex}"
             created = agent.create_session(session_name=session_name)
             if isinstance(created, str):
@@ -228,7 +193,6 @@ def ask(req: AskRequest) -> AskResponse:
                 session_id = getattr(created, "id", None) or getattr(created, "session_id", None) or getattr(created, "identifier", None) or str(created)
             logger.info("Session created rid=%s session_name=%s session_id=%s", request_id, session_name, session_id)
 
-        # Single non-streaming turn: return the complete answer
         result = agent.create_turn(
             messages=[{"role": "user", "content": req.question}],
             session_id=session_id,
@@ -247,9 +211,7 @@ def ask(req: AskRequest) -> AskResponse:
 
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8080")))
-    # Local/dev entrypoint. In containers, uvicorn is started via CMD in the Containerfile.
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
 
 

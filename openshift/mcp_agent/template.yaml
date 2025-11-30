@@ -1,0 +1,115 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: mcp-agent-template
+  annotations:
+    description: "Parametrized deployment of the MCP Agent (Deployment, Service, Route)"
+parameters:
+  - name: NAMESPACE
+    description: "Target OpenShift project/namespace to deploy into"
+    value: "llama-stack-demo"
+  - name: MCP_AGENT_IMAGE
+    description: "Container image for the MCP Agent"
+    value: "quay.io/your-org/mcp-agent:latest"
+  - name: LLAMA_BASE_URL
+    description: "Base URL for the Llama Stack service (cluster-internal or external)"
+    value: "http://lsd-llama-milvus-inline-service.default.svc.cluster.local:8321"
+  - name: MCP_TOOLGROUP_ID
+    description: "MCP tool group identifier to expose to the agent"
+    value: "mcp::kubernetes"
+  - name: MCP_SERVER_URL
+    description: "MCP server SSE endpoint URL"
+    value: "http://kubernetes-mcp-server.llama-stack-demo.svc.cluster.local:8080/sse"
+  - name: MCP_SERVER_LABEL
+    description: "Label/name for the MCP server"
+    value: "kubernetes"
+objects:
+  # Optional: create the project (requires permission). If this fails, create it manually and re-apply.
+  - apiVersion: project.openshift.io/v1
+    kind: Project
+    metadata:
+      name: ${NAMESPACE}
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: mcp-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: mcp-agent
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: mcp-agent
+      template:
+        metadata:
+          labels:
+            app: mcp-agent
+        spec:
+          containers:
+            - name: mcp-agent
+              image: ${MCP_AGENT_IMAGE}
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 8080
+                  name: http
+              env:
+                - name: LLAMA_BASE_URL
+                  value: "${LLAMA_BASE_URL}"
+                - name: MCP_TOOLGROUP_ID
+                  value: "${MCP_TOOLGROUP_ID}"
+                - name: MCP_SERVER_URL
+                  value: "${MCP_SERVER_URL}"
+                - name: MCP_SERVER_LABEL
+                  value: "${MCP_SERVER_LABEL}"
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: mcp-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: mcp-agent
+    spec:
+      selector:
+        app: mcp-agent
+      ports:
+        - name: http
+          port: 8080
+          targetPort: 8080
+
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: mcp-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: mcp-agent
+    spec:
+      to:
+        kind: Service
+        name: mcp-agent
+      port:
+        targetPort: http
+
+

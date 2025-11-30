@@ -6,10 +6,9 @@ This project deploys a supported Llama Stack using the Red Hat OpenShift AI oper
 - A custom runtime configuration delivered via a `ConfigMap` (`lsd-run`) with `run.yaml`
 - Example notebooks for RAG, agents, and tool usage against the deployed stack
 
-Key OpenShift manifests live under `openshift/llama-stack/`:
+- Key OpenShift resources live under `openshift/llama-stack/`:
 
-- `openshift/llama-stack/configmap.yaml`: Defines `ConfigMap/lsd-run` containing the Llama Stack `run.yaml` configuration
-- `openshift/llama-stack/llamastackdistribution.yaml`: Defines the `LlamaStackDistribution` instance that references `lsd-run` and sets server resources/env
+- `openshift/llama-stack/template.yaml`: Single OpenShift Template that creates the Project, Secret, runtime ConfigMap, and LlamaStackDistribution CR.
 
 The `LlamaStackDistribution` expects a Kubernetes `Secret` named `llama-stack-inference-model-secret` for remote vLLM access (URL, token, etc.).
 
@@ -22,78 +21,87 @@ The `LlamaStackDistribution` expects a Kubernetes `Secret` named `llama-stack-in
 - Values for remote inference (if using vLLM remotely):
   - `VLLM_URL`, `VLLM_API_TOKEN`, `VLLM_TLS_VERIFY` (e.g., `true`/`false`), and `INFERENCE_MODEL`
 
-## Quick start
+## Quick start (Template-based)
 
-1) Set your namespace (optional if you use `default`):
+1) Create a `.env` file with required parameters:
 
 ```bash
-export NS=default
+NAMESPACE=llama-stack-demo
+LSD_NAME=lsd-llama-milvus-inline
+INFERENCE_MODEL=llama-4-scout-17b-16e-w4a16
+VLLM_URL=https://your-vllm-endpoint/v1
+VLLM_API_TOKEN=REDACTED
+VLLM_TLS_VERIFY=true
 ```
 
-2) Create the Secret required by the distribution (adjust values to your environment):
+2) Process and apply the template:
 
 ```bash
-oc -n ${NS} create secret generic llama-stack-inference-model-secret \
-  --from-literal=INFERENCE_MODEL="meta-llama/Meta-Llama-3.1-8B-Instruct" \
-  --from-literal=VLLM_URL="https://your-vllm-endpoint/v1" \
-  --from-literal=VLLM_API_TOKEN="REDACTED" \
-  --from-literal=VLLM_TLS_VERIFY="true"
+oc process -f /Users/crenwick/Documents/SSA_resources/llama-stack-rag/openshift/llama-stack/template.yaml \
+  --param-file=/Users/crenwick/Documents/SSA_resources/llama-stack-rag/.env | oc apply -f -
 ```
 
-3) Apply the custom Llama Stack configuration `ConfigMap`:
+If your account cannot create projects, first:
 
 ```bash
-oc apply -n ${NS} -f openshift/llama-stack/configmap.yaml
+oc new-project "$NAMESPACE"
+oc process -f /Users/crenwick/Documents/SSA_resources/llama-stack-rag/openshift/llama-stack/template.yaml \
+  --param-file=/Users/crenwick/Documents/SSA_resources/llama-stack-rag/.env | oc apply -f -
 ```
 
-4) Deploy the Llama Stack via the operator using the custom `LlamaStackDistribution`:
+3) Watch resources come up:
 
 ```bash
-oc apply -n ${NS} -f openshift/llama-stack/llamastackdistribution.yaml
+oc -n "$NAMESPACE" get llamastackdistributions,deploy,svc,pods
 ```
 
-5) Watch the resources come up:
+4) Access the service (port-forward):
 
 ```bash
-oc get llamastackdistributions -n ${NS}
-oc get pods -n ${NS}
-oc describe llamastackdistribution lsd-llama-milvus-inline -n ${NS}
+oc -n "$NAMESPACE" get svc
+oc -n "$NAMESPACE" port-forward svc/llama-stack 8321:8321
 ```
 
-6) Access the service:
-
-- The server listens on port `8321` as defined in the CR. Depending on your cluster setup:
-  - Port-forward:
-
-    ```bash
-    oc -n ${NS} get svc
-    # Identify the service created for the Llama Stack
-    oc -n ${NS} port-forward svc/llama-stack 8321:8321
-    ```
-
-  - Or expose via `Route`/ingress if desired (cluster-specific).
-
-7) Test from your machine or from a pod in-cluster. For example, once forwarded:
+5) Test:
 
 ```bash
-curl -v http://localhost:8321/
+curl -s http://localhost:8321/v1/models | jq
+curl -s http://localhost:8321/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "'"$INFERENCE_MODEL"'",
+    "messages": [{"role": "user", "content": "Say hello in one sentence."}],
+    "temperature": 0.2
+  }' | jq
+```
+
+You can also test embeddings:
+
+```bash
+curl -s http://localhost:8321/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sentence-transformers/nomic-ai/nomic-embed-text-v1.5",
+    "input": ["Hello world", "Second sentence"]
+  }' | jq
 ```
 
 You can also use the notebooks under `notebooks/` to exercise inference, RAG, and agents once the stack is reachable.
 
 ## Customization
 
-- Namespace: Update `metadata.namespace` in `configmap.yaml` and `llamastackdistribution.yaml` or apply with `-n <namespace>`.
-- Runtime configuration: Edit `openshift/llama-stack/configmap.yaml` (`data.run.yaml`) to switch providers, vector DBs, tools, or telemetry.
-- Resources: Adjust CPU/memory limits/requests under `spec.server.containerSpec.resources` in `llamastackdistribution.yaml`.
-- Inference provider: If you change from remote vLLM to another provider, update both `run.yaml` and environment variables/Secrets accordingly.
+- Namespace: Use the `NAMESPACE` param in your `.env`.
+- Runtime configuration: Edit `openshift/llama-stack/template.yaml` `lsd-run` `run.yaml` section to switch providers, vector DBs, tools, or telemetry.
+- Resources: Adjust CPU/memory limits/requests via `LIMITS_*` and `REQ_*` params in `.env`.
+- Inference provider: Update your `.env` and the `inference` provider settings under `lsd-run` if needed.
 
 ## Cleanup
 
 ```bash
-oc delete -n ${NS} -f openshift/llama-stack/llamastackdistribution.yaml
-oc delete -n ${NS} -f openshift/llama-stack/configmap.yaml
-oc delete secret -n ${NS} llama-stack-inference-model-secret
+oc -n "$NAMESPACE" delete llamastackdistribution "$LSD_NAME"
+oc -n "$NAMESPACE" delete cm lsd-run
+oc -n "$NAMESPACE" delete secret llama-stack-inference-model-secret
+oc delete project "$NAMESPACE"   # optional
 ```
 
 ---
@@ -246,7 +254,23 @@ ansible-builder build \
 podman push "${IMAGE}"
 ```
 
-Then in EDA, create/update the Decision Environment to use `${IMAGE}` and ensure your activation in `ansible_deployment/caac/vars.yml` points to that Decision Environment name (edit `decision_environment` if needed).
+After you have built and pushed your Decision Environment image, set it in the CAAC playbook and apply:
+
+1) Edit `ansible_deployment/caac/apply.yml` and set the `de_image` variable under `vars:` to your image:
+
+```yaml
+vars:
+  # ...
+  de_image: "<your-registry>/<namespace>/eda-de:latest"
+```
+
+2) Run the CAAC playbook to create/update the EDA Decision Environment and related objects:
+
+```bash
+ansible-playbook ansible_deployment/caac/apply.yml
+```
+
+Ensure your activation in `ansible_deployment/caac/vars.yml` references the desired Decision Environment name (edit `decision_environment` if needed).
 
 macOS (Apple Silicon) note:
 - If you build on an M1/M2 Mac, you must build an amd64 image or EDA will fail with "Exec format error".
@@ -350,3 +374,133 @@ You can reuse the same platform OAuth token if your setup centralizes API access
 
 ### Reference
 - infra.aap_configuration collection: `https://github.com/redhat-cop/infra.aap_configuration`
+
+---
+
+## Special Payment Project: Monitoring and ServiceNow integration
+
+This repo includes a small demo app under `special_project_app/` plus turnkey monitoring that sends alerts to ServiceNow via a lightweight bridge.
+
+What it deploys
+- Namespace `special-payment-project` with:
+  - `checkout-api` (FastAPI) and `checkout-frontend` (nginx unprivileged)
+  - `ServiceMonitor` to scrape `checkout-api` `/metrics`
+  - `PrometheusRule` with example alerts:
+    - `PaymentUpstream` (based on `special_project_upstream_ok`)
+    - `DeploymentUnavailable`, `PodCrashLooping`
+  - `AlertmanagerConfig` routing alerts to a ServiceNow bridge
+- Namespace `special-monitoring` with:
+  - `snow-bridge` Deployment + Service (receives Alertmanager webhooks, calls ServiceNow)
+  - Secrets for ServiceNow instance URL and credentials
+
+Files
+- App + deploy:
+  - `special_project_app/openshift/00-namespace.yaml`
+  - `special_project_app/openshift/10-builds-imagestreams.yaml`
+  - `special_project_app/openshift/20-deploy-services.yaml`
+  - `special_project_app/openshift/30-routes.yaml`
+  - `special_project_app/openshift/40-payments-external.yaml`
+- Monitoring:
+  - `special_project_app/monitoring/servicemonitor.yaml`
+  - `special_project_app/monitoring/prometheusrule.yaml`
+  - `special_project_app/monitoring/alertmanagerconfig.yaml`
+  - `special_project_app/monitoring/servicenow-secret.example.yaml` (example only)
+- Bridge:
+  - `special_project_app/monitoring/snow-bridge/` (simple webhook → ServiceNow)
+  - Built and pushed via ImageStream/BuildConfig; see deploy script below
+
+Prerequisites
+- `oc` CLI logged into a cluster
+- Permissions:
+  - Project-level: create in `special-payment-project` and `special-monitoring`
+  - Cluster-admin if you want this script to enable User Workload Monitoring (UWM) for you
+- Optional: ServiceNow instance and credentials for incident creation
+
+Configure ServiceNow (recommended)
+Create a `.env` in `special_project_app/` if you want the deploy script to create/update Secrets automatically:
+
+```bash
+# ServiceNow
+SERVICENOW_INSTANCE_URL="https://your-instance.service-now.com"
+SERVICENOW_USERNAME="your.user"
+SERVICENOW_PASSWORD="your-password"
+```
+
+Notes
+- The `snow-bridge` uses two Secrets in the `special-monitoring` namespace:
+  - `snow-settings` (key `instance_url`)
+  - `snow-credentials` (keys `username`, `password`)
+- If you do not use `.env`, you can create them manually:
+
+```bash
+oc -n special-monitoring create secret generic snow-settings \
+  --from-literal=instance_url="https://your-instance.service-now.com"
+oc -n special-monitoring create secret generic snow-credentials \
+  --from-literal=username="your.user" \
+  --from-literal=password="your-password"
+```
+
+Enable User Workload Monitoring (if not already enabled)
+- The deploy script below will attempt to enable UWM and user-workload Alertmanager using cluster ConfigMaps:
+  - `openshift-monitoring/cluster-monitoring-config` with `enableUserWorkload: true`
+  - `openshift-user-workload-monitoring/user-workload-monitoring-config` with `alertmanager.enabled: true` and `enableAlertmanagerConfig: true`
+- If you do not have cluster-admin, ask an admin to enable these before proceeding.
+
+Deploy app + monitoring
+From `special_project_app/`:
+
+```bash
+./scripts/oc-deploy.sh <APPS_DOMAIN>
+# example:
+./scripts/oc-deploy.sh apps.cluster-xxxx.example.com
+```
+
+What the script does
+- Creates namespaces:
+  - `special-payment-project` (labeled `openshift.io/user-monitoring=true`)
+  - `special-monitoring`
+- Builds and pushes images from local sources (binary builds):
+  - `frontend/`, `api/`, and `monitoring/snow-bridge/`
+- Applies Deployments/Services and Routes
+- Creates `ServiceMonitor`, `PrometheusRule`, and `AlertmanagerConfig`
+- If `.env` is present, creates/updates `snow-settings` and `snow-credentials` Secrets
+- Enables UWM + user-workload Alertmanager (cluster-admin required)
+
+How alerting is wired
+- `ServiceMonitor` scrapes `checkout-api` on `/metrics` (port name `http`)
+- `PrometheusRule` fires the example alerts noted above
+- `AlertmanagerConfig` in `special-payment-project` sends webhooks to:
+  - `http://snow-bridge.special-monitoring.svc.cluster.local:8080/alerts`
+  - The `snow-bridge` then authenticates to ServiceNow using the Secrets and creates incidents
+
+Verify
+- Open the site:
+  - `https://special-payments.<APPS_DOMAIN>`
+- Metrics (OpenShift Console → Observe → Metrics):
+  - Query: `special_project_upstream_ok` (namespace: `special-payment-project`)
+- Alerts (OpenShift Console → Observe → Alerts):
+  - Look for `PaymentUpstream`, `DeploymentUnavailable`, `PodCrashLooping`
+
+Trigger an alert (demo)
+From `special_project_app/`:
+
+```bash
+./scripts/break_dns.sh
+# refresh the app and click Pay — expect a 502 and alert `PaymentUpstream`
+./scripts/restore_dns.sh
+```
+
+Clean up
+```bash
+oc delete -f special_project_app/openshift/30-routes.yaml || true
+oc delete -f special_project_app/openshift/40-payments-external.yaml || true
+oc delete -f special_project_app/openshift/20-deploy-services.yaml || true
+oc delete -f special_project_app/monitoring/servicemonitor.yaml || true
+oc delete -f special_project_app/monitoring/prometheusrule.yaml || true
+oc delete -f special_project_app/monitoring/alertmanagerconfig.yaml || true
+oc delete project special-payment-project || true
+oc delete project special-monitoring || true
+```
+
+More details
+- See `special_project_app/README.md` for app-specific behavior and DNS failure demo.

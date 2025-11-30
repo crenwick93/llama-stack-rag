@@ -22,10 +22,9 @@
     sn_username: "{{ lookup('env', 'SN_USERNAME') | default(omit, true) }}"
     sn_password: "{{ lookup('env', 'SN_PASSWORD') | default(omit, true) }}"
 
+    # EDA custom Decision Environment image (build and push first, then set here)
+    de_image: "quay.io/crenwick93/snow-de:latest"
   vars_files:
     - vars.yml
-
   roles:
     - role: infra.aap_configuration.dispatch
-
-

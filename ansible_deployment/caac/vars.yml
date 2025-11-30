@@ -111,7 +111,7 @@ eda_decision_environments:
   - name: "snow-de"
     description: "Decision Environment with ServiceNow collection"
     organization: "{{ aap_org }}"
-    image_url: "quay.io/crenwick93/snow-de:latest"
+    image_url: "{{ de_image }}"
     # If your registry requires auth, add:
     # credential: "<registry-credential-name>"
 
@@ -127,6 +127,6 @@ eda_rulebook_activations:
       - "ServiceNow ITSM"
       - "AAP Controller"
     enabled: true
-    log_level: "debug"
+    #log_level: "debug"
 
 

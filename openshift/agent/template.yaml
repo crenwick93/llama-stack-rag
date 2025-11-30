@@ -1,0 +1,104 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: rag-agent-template
+  annotations:
+    description: "Parametrized deployment of the RAG Agent (Deployment, Service, Route)"
+parameters:
+  - name: NAMESPACE
+    description: "Target OpenShift project/namespace to deploy into"
+    value: "llama-stack-demo"
+  - name: RAG_AGENT_IMAGE
+    description: "Container image for the RAG Agent"
+    value: "quay.io/crenwick93/rag-agent:latest"
+  - name: LLAMA_BASE_URL
+    description: "Base URL for the Llama Stack service (cluster-internal or external)"
+    value: "http://llama-stack:8321"
+  - name: VECTOR_DB_ID
+    description: "Default vector DB ID used by the agent"
+    value: "confluence"
+objects:
+  # Optional: create the project (requires permission). If this fails, create it manually and re-apply.
+  - apiVersion: project.openshift.io/v1
+    kind: Project
+    metadata:
+      name: ${NAMESPACE}
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: rag-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: rag-agent
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: rag-agent
+      template:
+        metadata:
+          labels:
+            app: rag-agent
+        spec:
+          containers:
+            - name: rag-agent
+              image: ${RAG_AGENT_IMAGE}
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 8080
+                  name: http
+              env:
+                - name: LLAMA_BASE_URL
+                  value: "${LLAMA_BASE_URL}"
+                - name: VECTOR_DB_ID
+                  value: "${VECTOR_DB_ID}"
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: rag-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: rag-agent
+    spec:
+      selector:
+        app: rag-agent
+      ports:
+        - name: http
+          port: 8080
+          targetPort: 8080
+
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: rag-agent
+      namespace: ${NAMESPACE}
+      labels:
+        app: rag-agent
+    spec:
+      to:
+        kind: Service
+        name: rag-agent
+      port:
+        targetPort: http
+

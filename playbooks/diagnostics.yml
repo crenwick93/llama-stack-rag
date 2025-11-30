@@ -1,0 +1,163 @@
+---
+- name: Special Payment Project - Generic Diagnostics
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - kubernetes.core
+
+  vars:
+    namespace: "{{ namespace | default('special-payment-project') }}"
+
+  tasks:
+    - name: Gather Routes in namespace
+    - name: Get routes
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ namespace }}"
+      register: routes_info
+
+    - name: Gather Deployments for frontend and api
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - "app in (frontend,api)"
+      register: deploys_info
+
+    - name: Gather Services
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        namespace: "{{ namespace }}"
+      register: svcs_info
+
+    - name: Gather Endpoints
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Endpoints
+        namespace: "{{ namespace }}"
+      register: eps_info
+
+    - name: Gather Pods (frontend and api)
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - "app in (frontend,api)"
+      register: pods_info
+
+    - name: Pick first API pod (if any)
+      set_fact:
+        api_pod_name: "{{ (pods_info.resources | selectattr('metadata.labels.app','equalto','api') | list | first).metadata.name | default(omit) }}"
+      when: pods_info.resources | length > 0
+
+    - name: Extract PAYMENTS_BASE and PAYMENTS_PATH from API Deployment (if present)
+      set_fact:
+        payments_base: >-
+          {{
+            (deploys_info.resources
+            | selectattr('metadata.labels.app','equalto','api')
+            | list | first).spec.template.spec.containers
+            | selectattr('name','defined')
+            | list | first
+            | json_query("env[?name=='PAYMENTS_BASE'].value | [0]")
+          }}
+        payments_path: >-
+          {{
+            (deploys_info.resources
+            | selectattr('metadata.labels.app','equalto','api')
+            | list | first).spec.template.spec.containers
+            | selectattr('name','defined')
+            | list | first
+            | json_query("env[?name=='PAYMENTS_PATH'].value | [0]")
+          }}
+      when: (deploys_info.resources | length) > 0
+
+    - name: Derive upstream host from PAYMENTS_BASE (if available)
+      set_fact:
+        upstream_hostport: "{{ (payments_base | default('') ) | regex_replace('^https?://','') | regex_replace('/.*$','') }}"
+        upstream_host_only: "{{ ( (payments_base | default('') ) | regex_replace('^https?://','') | regex_replace('/.*$','') ).split(':')[0] }}"
+      when: payments_base is defined and payments_base | length > 0
+
+    - name: DNS resolution from API pod (if possible)
+      kubernetes.core.k8s_exec:
+        namespace: "{{ namespace }}"
+        pod: "{{ api_pod_name }}"
+        command:
+          - sh
+          - -lc
+          - "getent hosts {{ upstream_host_only }}"
+      register: dns_check
+      failed_when: false
+      changed_when: false
+      when:
+        - api_pod_name is defined
+        - upstream_host_only is defined
+
+    - name: HTTP reachability from API pod (if possible)
+      kubernetes.core.k8s_exec:
+        namespace: "{{ namespace }}"
+        pod: "{{ api_pod_name }}"
+        command:
+          - sh
+          - -lc
+          - "curl -sS -i -m 5 {{ payments_base | default('') }}{{ payments_path | default('') }}"
+      register: http_check
+      failed_when: false
+      changed_when: false
+      when:
+        - api_pod_name is defined
+        - payments_base is defined
+
+    - name: Tail API pod logs (if available)
+      kubernetes.core.k8s_log:
+        namespace: "{{ namespace }}"
+        name: "{{ api_pod_name }}"
+        tail_lines: 100
+        container: api
+      register: api_logs
+      failed_when: false
+      changed_when: false
+      when: api_pod_name is defined
+
+    - name: Summarize diagnostics
+      debug:
+        msg:
+          namespace: "{{ namespace }}"
+          routes:
+            count: "{{ routes_info.resources | length }}"
+            hosts: "{{ routes_info.resources | map(attribute='spec.host') | list }}"
+            api_paths: "{{ routes_info.resources | selectattr('metadata.name','equalto','portal-api') | map(attribute='spec.path') | list }}"
+          deployments:
+            items: >-
+              {{
+                deploys_info.resources
+                | map('extract', {'name':'metadata.name','ready':'status.readyReplicas','avail':'status.availableReplicas'})
+                | list
+              }}
+          services:
+            names: "{{ svcs_info.resources | map(attribute='metadata.name') | list }}"
+          endpoints:
+            items: >-
+              {{
+                eps_info.resources
+                | map('extract', {'name':'metadata.name','subsets':'subsets'})
+                | list
+              }}
+          pods:
+            api_pod: "{{ api_pod_name | default('n/a') }}"
+            counts: "{{ pods_info.resources | length }}"
+          upstream_from_env:
+            payments_base: "{{ payments_base | default('') }}"
+            payments_path: "{{ payments_path | default('') }}"
+            upstream_host: "{{ upstream_host_only | default('') }}"
+          in_pod_checks:
+            dns_resolution: "{{ (dns_check.stdout | default('')) | trim }}"
+            http_sample: "{{ (http_check.stdout | default('')) | regex_replace('\\n+$','') }}"
+          api_logs_tail: "{{ api_logs.log_lines | default([]) }}"
+
+
