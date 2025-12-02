@@ -97,6 +97,27 @@ controller_templates:
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow ITSM"
+  - name: "Run Implementation Plan from Change Request"
+    description: "Launch the proposed implementation plan from a ServiceNow change"
+    organization: "{{ aap_org }}"
+    job_type: "run"
+    project: "llama-stack-rag"
+    playbook: "playbooks/launch_implementation_plan.yml"
+    inventory: "Demo Inventory"
+    ask_variables_on_launch: true
+    credentials:
+      - "ServiceNow ITSM"
+      - "AAP Controller"
+  - name: "Test: Launch Configure Service"
+    description: "Test ansible.controller.job_launch by launching 'Configure Service'"
+    organization: "{{ aap_org }}"
+    job_type: "run"
+    project: "llama-stack-rag"
+    playbook: "playbooks/test_job_launch.yml"
+    inventory: "Demo Inventory"
+    ask_variables_on_launch: false
+    credentials:
+      - "AAP Controller"
 
 # EDA projects
 eda_projects:
@@ -128,6 +149,14 @@ controller_credentials:
       bearer_token: "{{ ocp_api_token }}"
       verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
       ssl_ca_cert: "{{ ocp_ssl_ca_cert | default(omit) }}"
+  - name: "AAP Controller"
+    description: "Token credential for launching Controller jobs via ansible.controller modules"
+    organization: "{{ aap_org }}"
+    credential_type: "Red Hat Ansible Automation Platform"
+    inputs:
+      host: "{{ (aap_hostname | regex_replace('/+$','')) ~ '/api/controller/' }}"
+      oauth_token: "{{ aap_token }}"
+      verify_ssl: "{{ aap_validate_certs }}"
 
 # EDA credentials (ServiceNow, using the custom type)
 eda_credentials:

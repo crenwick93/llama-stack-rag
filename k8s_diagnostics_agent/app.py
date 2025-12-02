@@ -451,10 +451,24 @@ def _run_pipeline(payload: Any) -> dict:
         rag_json = None
         try:
             import re as _re
-            m = _re.search(r"### JSON_START\s*(\{.*\})\s*### JSON_END", raw_text, flags=_re.DOTALL)
+            # Be resilient to code fences/backticks and HTML line breaks in the model output
+            raw_for_json = raw_text
+            try:
+                raw_for_json = _re.sub(r"`{3,}[\w-]*", "", raw_for_json)  # remove ``` or ```json fences
+                raw_for_json = raw_for_json.replace("<br/>", "\n").replace("<br>", "\n")
+            except Exception:
+                pass
+            # Find the innermost JSON object between the markers, ignoring any leading/trailing noise
+            m = _re.search(r"### JSON_START[\s\S]*?(\{[\s\S]*\})[\s\S]*?### JSON_END", raw_for_json, flags=_re.DOTALL)
             if m:
                 json_str = m.group(1).strip()
-                rag_explanation = raw_text[: m.start()].strip()
+                # Keep the explanation text (before marker) from the original raw_text for readability
+                try:
+                    m2 = _re.search(r"### JSON_START", raw_text)
+                    if m2:
+                        rag_explanation = raw_text[: m2.start()].strip()
+                except Exception:
+                    pass
                 try:
                     rag_json = json.loads(json_str)
                 except Exception:
