@@ -20,3 +20,65 @@
       action:
         print_event:
           pretty: true
+
+###############################################################################################
+############################ RUN THE DIAGNOSTICS ##############################################
+
+    # - name: Run diagnostics and enrich incident
+    #   condition: event.payload.commonLabels.alertname == "systemd failed service"
+    #   action:
+    #     run_job_template:
+    #       name: K8s Agent Diagnostics
+    #       organization: default
+    #       post_events: true
+    #       job_args:
+    #         extra_vars:
+    #           short_description: "Systemd failure on {{ event.payload.commonLabels.instance }}"
+    #           description: "Systemd failure on {{ event.payload.commonLabels.instance }} - EDA will run diagnostics"
+    #           impact: 1
+    #           urgency: 1
+    #           target_host: "{{ event.payload.commonLabels.instance }}"
+
+###############################################################################################
+#### RULES BELOW WILL BE TRIGGERED ON SECOND RUN (POST_EVENTS:TRUE) IF ANY CONDITIONS MATCH ###
+
+    # - name: Raise change if agent diagnostics identifies a resolution for the incident
+    #   condition: >
+    #     event.environment is defined and event.environment == "Production"
+    #     and event.diagnostics_structured.nginx_config_error is match(".*unknown directive.*", ignorecase=true)
+    #   action:
+    #     run_workflow_template:
+    #       name: Create Change
+    #       organization: Default
+    #       job_args:
+    #         extra_vars:
+    #           # Change Request fields
+    #           change_short_description: "Emergency change: Nginx issue on {{ event.target_host | default('unknown host') }}"
+    #           change_description: |
+    #             Automated emergency change created by EDA.
+    #             Incident: {{ event.incident_number | default('unknown') }}
+    #             Host: {{ event.target_host | default('unknown host') }}
+    #             Environment: {{ event.environment | default('unknown') }}
+    #             Diagnostics report: {{ event.diagnostics_report | default('') }}
+
+    #             When the change is approved, the nginx config will be replaced with the last working version.
+    #           change_impact: high
+    #           change_urgency: high
+    #           change_assignment_group: "Event Driven Ansible"
+    #           implementation_job_template_name: "Remediate Nginx Config"
+    #           change_justification: "{{ event.diagnostics_structured.nginx_config_error | default('') }}"
+
+    #           # Incident fields for the playbook's pre-change incident
+    #           success_update: |
+    #             ########### EDA REMEDIATION STATUS UPDATE - SUCCESS #############
+    #           fail_update: |
+    #               ########### EDA REMEDIATION STATUS UPDATE - FAIL #############
+    #           work_notes: |
+    #             EDA REMEDIATION STATUS UPDATE - Production incident - Approval Required - Change Request Raised
+
+    #           # Correlation to link incident and change
+    #           alert_fingerprint: "{{ event.correlation_id | default('') }}"
+    #           # Pass-through context for remediation
+    #           target_host: "{{ event.target_host | default('') }}"
+    #           environment: "{{ event.environment | default('') }}"
+    #           incident_sys_id: "{{ event.sys_id | default('') }}"

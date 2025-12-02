@@ -49,4 +49,19 @@
       debug:
         var: k8s_diag_json.output_as_json
 
+###############################################################################################
+#####################  UPLOAD REPORT TO SERVICE NOW (IF REQUIRED) ############################
+- name: Upload report to ServiceNow
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    # Create ServiceNow incident and set incident_sys_id so it's accessible in workflow or rulebook
+
+    - name: Update ticket with report
+      servicenow.itsm.incident:
+        sys_id: "{{ incident_sys_id }}"
+        state: 2 # In Progress
+        other:
+          work_notes: "{{ k8s_diag_json.worknotes | default('no worknotes returned') }}"
+
 
