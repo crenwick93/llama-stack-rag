@@ -31,6 +31,7 @@ VECTOR_STORE_IDS="${VECTOR_STORE_IDS:-}"
 VECTOR_DB_ID="${VECTOR_DB_ID:-}"
 MCP_SERVER_URL="${MCP_SERVER_URL:-http://kubernetes-mcp-server.llama-stack-demo.svc.cluster.local:8080/sse}"
 MCP_SERVER_LABEL="${MCP_SERVER_LABEL:-kubernetes-mcp}"
+ROUTE_TIMEOUT="${ROUTE_TIMEOUT:-5m}"
 
 echo "Deploying K8s Diagnostics Agent to namespace: $NAMESPACE"
 echo
@@ -59,6 +60,11 @@ oc process -f "$TEMPLATE" \
   -p MCP_SERVER_LABEL="$MCP_SERVER_LABEL" \
   -p APP_BUILD_STAMP="$APP_BUILD_STAMP" \
   | oc apply -f -
+
+# Ensure router timeout is long enough for diagnostics (defaults to 5m; override via ROUTE_TIMEOUT)
+echo "Annotating route timeout to ${ROUTE_TIMEOUT}..."
+oc -n "$NAMESPACE" annotate route k8-diagnostics-agent \
+  "haproxy.router.openshift.io/timeout=${ROUTE_TIMEOUT}" --overwrite || true
 
 echo "Forcing rollout restart to pick up the latest image..."
 oc rollout restart -n "$NAMESPACE" deploy/k8-diagnostics-agent || true
