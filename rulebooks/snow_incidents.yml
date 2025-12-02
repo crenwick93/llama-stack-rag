@@ -25,6 +25,10 @@
 ############################ RUN THE DIAGNOSTICS ##############################################
 
     - name: Run diagnostics and enrich incident
+      throttle:
+        once_within: 10 minutes
+        group_by_attributes:
+          - sys_id
       condition: event.short_description is defined
       action:
         run_job_template:

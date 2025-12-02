@@ -85,6 +85,8 @@ controller_templates:
     playbook: "playbooks/k8s_agent_diagnostics.yml"
     inventory: "Demo Inventory"
     ask_variables_on_launch: true
+    credentials:
+      - "ServiceNow ITSM"
 
 # EDA projects
 eda_projects:
