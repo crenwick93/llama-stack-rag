@@ -73,5 +73,5 @@
               change_justification: >-
                 {{ (event.diagnostics_structured.evidence_mapping | default([])) | join(' | ') }}
               alert_fingerprint: "{{ event.correlation_id | default('') }}"
-              incident_sys_id: "{{ event.sys_id | default('') }}"
+              incident_sys_id: "{{ event.sys_id | default(event.eda_event.sys_id | default('')) }}"
               incident_number: "{{ event.number | default('') }}"
