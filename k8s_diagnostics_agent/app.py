@@ -155,6 +155,11 @@ Do NOT simulate tool calls or outputs.
 Do NOT write fake examples like [pods_list_in_namespace(...)];
 instead, emit real MCP tool calls so the server can execute them.
 
+Do NOT include pseudo-tool call syntax (for example lines like [resources_get(...)]
+or [pods_log(...)] ) in your final findings output. Only write human-readable
+findings and observed values/results. All tool calls must be emitted as real tool
+invocations, not printed.
+
 You do NOT have access to any documentation or knowledge base in this phase.
 You MUST NOT guess what the “correct” hostname, port, or configuration should be.
 Only report what you can observe directly from MCP tool outputs.
@@ -195,94 +200,147 @@ Do NOT try to guess business impact or historical context here.
 Simply describe what looks wrong or suspicious in the live cluster.
 """.strip()
 
+def _get_text_from_turn_like_notebook(turn: Any) -> str:
+    """
+    Extract assistant text similar to the notebook's helper:
+    - Prefer output_text
+    - Else parse turn.to_dict().output[].content[].text for types output_text/text
+    - Else fall back to extract_output_text
+    """
+    try:
+        t = getattr(turn, "output_text", None)
+        if isinstance(t, str) and t.strip():
+            return t
+        if hasattr(turn, "to_dict"):
+            d = turn.to_dict()
+        elif isinstance(turn, dict):
+            d = turn
+        else:
+            d = None
+        if isinstance(d, dict):
+            pieces: list[str] = []
+            for item in (d.get("output") or []):
+                for c in (item.get("content") or []):
+                    if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
+                        txt = c.get("text", "")
+                        if isinstance(txt, str) and txt:
+                            pieces.append(txt)
+            if pieces:
+                return "\n".join(pieces)
+            txt2 = d.get("text")
+            if isinstance(txt2, str) and txt2.strip():
+                return txt2
+    except Exception:
+        pass
+    return extract_output_text(turn)
+
 
 def build_rag_correlation_instructions() -> str:
     return """
 You are a knowledge-base assistant for the Special Payment Project.
 
-You are given:
+INPUTS:
 - An incident description.
-- A structured summary of cluster findings from a diagnostics pass that already
-  inspected pods, logs, and services.
+- A structured summary of cluster findings from diagnostics (pods, logs, Services, DNS, routes).
 
-The cluster findings may include:
-- Concrete configuration values (for example hostnames, ports, externalName targets,
-  Service types, selectors, URLs).
-- Log snippets showing HTTP 5xx, connection errors, DNS failures, TLS issues, etc.
-- Short notes about which pods and Services appear to sit in the request path.
+Goal:
+- Correlate findings with the Special Payment Project KB (via file_search) and produce a concise RCA + next steps.
+- Prefer project-specific docs over generic Kubernetes docs.
 
-You have access to a set of Special Payment Project documents stored in a knowledge base
-(e.g. exported from Confluence). Their titles and section headings may change over time.
+CANONICAL_FALLBACKS (authoritative values to use when the KB is ambiguous or conflicting):
+- card-gateway-dns.externalName => card-gateway-sandbox.payments-provider-sim.svc.cluster.local
 
-Using ONLY the knowledge base (via file_search), you MUST:
-- Look for issues, configuration notes, or design sections that match these findings.
-- Pay particular attention to:
-  - Expected configuration values (for example, expected hostnames, ports, URL patterns,
-    or Service types).
-  - Error patterns that resemble the logs in the findings (HTTP 5xx, DNS errors,
-    timeouts, TLS failures, etc.).
-- Prefer project-specific documentation about the Special Payment Project over generic
-  Kubernetes documentation when both are available.
+Matching rules:
+- If the KB documents an expected value and the cluster shows a different observed value, explicitly describe the mismatch and treat it as the likely root cause.
+- If observed values match the KB, consider other KB-listed causes (backend down, port mismatch, egress policy, TLS expiry, app bugs) guided by the findings.
 
-When the KB documents an expected configuration value and the cluster findings show
-a different observed value, you MUST:
-- Explicitly describe the mismatch in your own words (for example: “the Service in the
-  cluster points to X, but the documentation says it should point to Y”).
-- Treat such a mismatch as strong evidence of a misconfiguration.
-- Clearly state that this configuration mismatch is the most likely root cause in this
-  situation, rather than just listing generic “possible causes”.
+AAP remediation suggestion:
+- Use ONLY job template names exactly as they appear on the “AAP Job Templates” page. Do NOT invent or paraphrase names.
+- If the evidence indicates a Kubernetes Service ExternalName mismatch (DNS alias typo/drift), you MUST choose the job template named exactly: "Configure Service".
+- Output ONLY job_template_name and extra_vars (as a JSON object of required vars). Do NOT include rollback or additional fields. Do NOT execute anything; suggestion only.
 
-If the observed values in the cluster match what the KB describes as expected, you should:
-- NOT blame a configuration typo by default.
-- Instead, consider other causes mentioned in the KB (for example: backend service down,
-  wrong port open, network policy restrictions, TLS expiry, application bugs) based on
-  the cluster findings.
+Resolving the canonical FQDN (strict):
+- Try to extract the exact canonical FQDN from the KB quotes relevant to card-gateway-dns.
+- If multiple candidates appear, choose the one that exactly matches the fallback value.
+- If the KB is ambiguous, typo’d, missing, or conflicts, USE the CANONICAL_FALLBACKS value:
+  card-gateway-sandbox.payments-provider-sim.svc.cluster.local
+- Never output placeholders like "<canonical FQDN from KB>" — always output a concrete FQDN string.
 
-EVIDENCE AND REFERENCING:
+Referencing:
 - Do NOT invent document titles or section names.
-- Do NOT include pseudo-tool calls like [knowledge_search(...)] or [file_search(...)]
-  in your final answer. Just describe what you found in natural language.
-- When you rely on the KB for an expected value, configuration detail, or known issue,
-  include a short quote (1–2 sentences) from the KB that supports your conclusion.
-  The quote MUST be something that could plausibly appear verbatim in the KB.
-- Prefer quoting project-specific content (for example, descriptions of Special Payment
-  Project services, namespaces, or hostnames) over generic Kubernetes descriptions.
+- When you rely on the KB (expected values, known issues, or job template/vars), include a short quote (1–2 sentences) that could plausibly appear verbatim in the KB. If you used the fallback because the KB was ambiguous, say so briefly.
 
-REFERENCE DOCUMENT (WHITELISTED TITLES ONLY):
-- At the end of your answer, you MUST add a small reference section in this format:
+Reference document (choose ONE that best fits your main evidence):
+- "Special Payment Project – Overview & Context"
+- "Special Payment Project – Application Architecture"
+- "Special Payment Project – Deployment & Configuration"
+- "Special Payment Project – Networking & External Dependencies"
+- "Special Payment Project – Observability & Alerts"
+- "AAP Job Templates"
 
-  Key KB evidence:
-  - "<short quote from the KB that supports your conclusion>"
-  - (optionally up to 2 more bullets if they are crucial)
+OUTPUT FORMAT (dual output):
+First, produce a concise, human-readable explanation with headings:
+- 1) Probable cause — 1–2 lines
+- 2) Evidence mapping — bullets quoting observed vs. expected
+- 3) Next steps — up to 5 copy/paste commands
+- 4) Proposed remediation via AAP — job_template_name + extra_vars (JSON-style; include concrete FQDN)
+- 5) Key KB evidence — 1–2 short quotes (or state that fallback was used)
+- 6) Reference document — ONE of the whitelisted titles above
 
-  Reference document:
-  - "<ONE title from the allowed list below>"
+Then, on a new line, output a single JSON object (per the schema below) delimited by these exact markers:
 
-- The Reference document line MUST be exactly one of the following strings:
-  - "Special Payment Project – Overview & Context"
-  - "Special Payment Project – Application Architecture"
-  - "Special Payment Project – Deployment & Configuration"
-  - "Special Payment Project – Networking & External Dependencies"
-  - "Special Payment Project – Observability & Alerts"
+### JSON_START
+{
+  "probable_cause": "string (1–2 sentences)",
+  "evidence_mapping": [
+    "string — observed finding",
+    "string — expected value from KB or canonical fallback",
+    "string — explicit mismatch description"
+  ],
+  "next_steps": [
+    { "description": "string", "command": "string" }
+  ],
+  "proposed_remediation_via_aap": {
+    "job_template_name": "string (exact name from 'AAP Job Templates')",
+    "extra_vars": {
+      "namespace": "string",
+      "external_service_name": "string",
+      "correct_external_name": "string"   // MUST be a concrete FQDN; never a placeholder
+    }
+  },
+  "key_kb_evidence": [
+    "short quote 1 (or 'Using canonical fallback due to ambiguous KB')"
+  ],
+  "reference_document": "ONE of the whitelisted titles above"
+}
+### JSON_END
 
-- You MUST NOT write any other value for Reference document.
-- You MUST NOT invent new titles or paraphrase these titles.
-- If you are uncertain which document the evidence came from, choose the one that
-  best matches the content based on its title. For DNS and ExternalName behaviour,
-  prefer "Special Payment Project – Networking & External Dependencies".
+Rules:
+- Do not wrap the JSON in markdown fences. Ensure valid JSON (double-quoted keys/strings).
+- Use ONLY the fields shown; do not add/rename/remove keys.
+- If Service ExternalName mismatch is detected:
+  - job_template_name MUST be "Configure Service"
+  - extra_vars MUST include:
+      namespace: "special-payment-project"
+      external_service_name: "card-gateway-dns"
+      correct_external_name: (the concrete canonical FQDN derived via KB or CANONICAL_FALLBACKS)
+- Never output "<canonical FQDN from KB>" or any placeholder.
 
-In all cases:
-- Explain the most likely root cause(s) in this specific scenario, grounded in both
-  the cluster findings and the documentation.
-- Explicitly reference which observed values you are comparing against which expected
-  values from the KB (for example: “externalName in the cluster is X, the KB says it
-  should be Y”).
-- Suggest concrete next steps for an SRE (for example, config changes, rollbacks,
-  additional checks to perform).
-
-If the KB is inconclusive, say so, mention what kind of information you looked for,
-and suggest what a human should investigate next.
-Be concise and practical.
+FAILSAFE (if evidence/KB is insufficient or retrieval fails):
+- You MUST STILL RETURN BOTH the human-readable section AND a valid JSON block where:
+  - "probable_cause": "inconclusive"
+  - "evidence_mapping": []
+  - "next_steps": [
+      { "description": "Collect Service spec", "command": "oc get svc -n special-payment-project card-gateway-dns -o yaml" },
+      { "description": "Resolve ExternalName from API pod", "command": "oc exec -n special-payment-project deploy/checkout-api -- getent hosts card-gateway-dns" },
+      { "description": "Synthetic probe", "command": "curl -i https://special-payments.apps.<APPS_DOMAIN>/api/ping-upstream" }
+    ]
+  - "proposed_remediation_via_aap": {
+      "job_template_name": "",
+      "extra_vars": { "namespace": "special-payment-project", "external_service_name": "card-gateway-dns", "correct_external_name": "card-gateway-sandbox.payments-provider-sim.svc.cluster.local" }
+    }
+  - "key_kb_evidence": ["Using canonical fallback due to missing KB evidence"]
+  - "reference_document": "Special Payment Project – Deployment & Configuration"
 """.strip()
 
 
@@ -313,12 +371,32 @@ def _run_pipeline(payload: Any) -> dict:
     logger.info("PIPELINE start rid=%s", request_id)
 
     try:
+        # Derive an incident question string for prompts (as in the notebook)
+        incident_question = ""
+        if isinstance(payload, str):
+            maybe_q = payload
+            if maybe_q.strip():
+                incident_question = maybe_q.strip()
+        elif isinstance(payload, dict):
+            maybe_q = (
+                payload.get("incident_question")
+                or payload.get("question")
+                or payload.get("incident")
+                or payload.get("description")
+                or payload.get("short_description")
+                or ""
+            )
+            if isinstance(maybe_q, str) and maybe_q.strip():
+                incident_question = maybe_q.strip()
+        if not incident_question:
+            incident_question = "Please investigate the following incident.\n" + summarize_incident_payload(payload)
+
         client = get_client()
         model_id = select_model(client)
         mcp_url, mcp_label = get_mcp_server()
         mcp_messages = [
             {"role": "system", "content": build_mcp_instructions()},
-            {"role": "user", "content": "Incident details (JSON):\n" + summarize_incident_payload(payload)},
+            {"role": "user", "content": incident_question},
         ]
         mcp_result = client.responses.create(
             model=model_id,
@@ -328,6 +406,19 @@ def _run_pipeline(payload: Any) -> dict:
             max_infer_iters=8,
         )
         mcp_findings = extract_output_text(mcp_result).strip()
+        # Remove any stray pseudo-tool call lines like [resources_get(...)]
+        try:
+            import re as _re_mcp
+            lines = mcp_findings.splitlines()
+            cleaned = []
+            for ln in lines:
+                if _re_mcp.match(r"^\s*\[[A-Za-z_]+\(", ln) and ln.strip().endswith(")"):
+                    # skip pseudo tool-call echo
+                    continue
+                cleaned.append(ln)
+            mcp_findings = "\n".join(cleaned).strip()
+        except Exception:
+            pass
     except Exception as exc:
         logger.exception("MCP diagnostics failed rid=%s: %s", request_id, exc)
         raise HTTPException(status_code=500, detail=f"MCP diagnostics failed: {exc}")
@@ -346,18 +437,63 @@ def _run_pipeline(payload: Any) -> dict:
             {
                 "role": "user",
                 "content": (
-                    "Incident details (JSON):\n"
-                    + summarize_incident_payload(payload)
+                    "Incident description:\n"
+                    + incident_question
                     + "\n\nCluster findings from MCP diagnostics:\n"
                     + (mcp_findings or "(none)")
                 ),
             },
         ]
         rag_result = rag_agent.create_turn(messages=rag_messages, session_id=session_id, stream=False)
-        rag_explanation = extract_output_text(rag_result).strip()
+        # Dual-output extraction (Cell 8 logic)
+        raw_text = _get_text_from_turn_like_notebook(rag_result).strip()
+        rag_explanation = raw_text
+        rag_json = None
+        try:
+            import re as _re
+            m = _re.search(r"### JSON_START\s*(\{.*\})\s*### JSON_END", raw_text, flags=_re.DOTALL)
+            if m:
+                json_str = m.group(1).strip()
+                rag_explanation = raw_text[: m.start()].strip()
+                try:
+                    rag_json = json.loads(json_str)
+                except Exception:
+                    rag_json = None
+        except Exception:
+            pass
     except Exception as exc:
         logger.exception("RAG correlation failed rid=%s: %s", request_id, exc)
         raise HTTPException(status_code=500, detail=f"RAG correlation failed: {exc}")
+
+    # Build combined worknotes (Cell 9-like, plain text)
+    worknotes_lines: list[str] = []
+    worknotes_lines.append("=" * 80)
+    worknotes_lines.append("MCP-First Diagnostics + RAG Correlation (Special Payment Project)")
+    worknotes_lines.append("=" * 80)
+    worknotes_lines.append("")
+    worknotes_lines.append("Phase 1 – MCP diagnostics (live cluster)")
+    worknotes_lines.append("-" * 80)
+    worknotes_lines.append(mcp_findings if mcp_findings else "(no MCP cluster findings text returned)")
+    worknotes_lines.append("")
+    worknotes_lines.append("Phase 2 – RAG correlation (knowledge base) — Nicely Formatted")
+    worknotes_lines.append("-" * 80)
+    worknotes_lines.append(rag_explanation if rag_explanation else "(no formatted RAG text returned)")
+    # Ensure a clear reference document line is present (derive from JSON if needed)
+    try:
+        if rag_json and isinstance(rag_json, dict):
+            ref_doc = rag_json.get("reference_document")
+            if isinstance(ref_doc, str) and ref_doc.strip():
+                worknotes_lines.append("")
+                worknotes_lines.append("Reference document")
+                worknotes_lines.append("-" * 80)
+                worknotes_lines.append(ref_doc.strip())
+    except Exception:
+        pass
+    worknotes_lines.append("")
+    worknotes_lines.append("=" * 80)
+    worknotes_lines.append("End of diagnostics")
+    worknotes_lines.append("=" * 80)
+    worknotes = "\n".join(worknotes_lines)
 
     logger.info("PIPELINE done rid=%s mcp_chars=%s rag_chars=%s", request_id, len(mcp_findings), len(rag_explanation))
     return {
@@ -365,17 +501,28 @@ def _run_pipeline(payload: Any) -> dict:
         "incident": payload,
         "mcp_findings": mcp_findings,
         "knowledge_base_rag_cross_reference": rag_explanation,
+        "worknotes": worknotes,
+        "output_as_json": rag_json,
     }
 
 
 @app.post("/diagnose")
 async def diagnose(request: Request) -> dict:
+    payload: Any = None
+    # Try JSON first; fall back to raw text (ServiceNow description sent as text/plain)
     try:
         payload = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {exc}")
+    except Exception:
+        try:
+            raw = await request.body()
+            if raw:
+                decoded = raw.decode("utf-8", errors="ignore").strip()
+                if decoded:
+                    payload = decoded
+        except Exception:
+            pass
     if payload is None:
-        raise HTTPException(status_code=400, detail="Request body must be JSON")
+        raise HTTPException(status_code=400, detail="Request body must be JSON or plain text")
     client = get_client()
     model_id = select_model(client)
     results = _run_pipeline(payload)

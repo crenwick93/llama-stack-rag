@@ -1,0 +1,65 @@
+---
+- name: Special Project Service - Deploy/Repair DNS
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - kubernetes.core
+
+  vars:
+    namespace: "{{ namespace | default('special-payment-project') }}"
+    external_service_name: "{{ external_service_name | default('card-gateway-dns') }}"
+    correct_external_name: "{{ correct_external_name | default('card-gateway-sandbox.payments-provider-sim.svc.cluster.local') }}"
+
+  tasks:
+    - name: Ensure ExternalName Service points to correct upstream
+      kubernetes.core.k8s_json_patch:
+        api_version: v1
+        kind: Service
+        name: "{{ external_service_name }}"
+        namespace: "{{ namespace }}"
+        patch:
+          - op: replace
+            path: /spec/externalName
+            value: "{{ correct_external_name }}"
+      register: patch_result
+      failed_when: false
+
+    - name: Ensure Service type is ExternalName
+      kubernetes.core.k8s_json_patch:
+        api_version: v1
+        kind: Service
+        name: "{{ external_service_name }}"
+        namespace: "{{ namespace }}"
+        patch:
+          - op: replace
+            path: /spec/type
+            value: ExternalName
+      register: type_patch_result
+      failed_when: false
+
+    - name: Read Service after patch
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ external_service_name }}"
+        namespace: "{{ namespace }}"
+      register: svc_info
+
+    - name: Assert service externalName is correct
+      assert:
+        that:
+          - svc_info.resources | length > 0
+          - (svc_info.resources[0].spec.externalName | default('')) == correct_external_name
+        fail_msg: "Service externalName not set to expected value."
+        success_msg: "Service externalName is set correctly."
+
+    - name: Show service summary
+      debug:
+        msg:
+          name: "{{ svc_info.resources[0].metadata.name | default(external_service_name) }}"
+          type: "{{ svc_info.resources[0].spec.type | default('') }}"
+          externalName: "{{ svc_info.resources[0].spec.externalName | default('') }}"
+          namespace: "{{ namespace }}"
+
+
