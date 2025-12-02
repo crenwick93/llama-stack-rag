@@ -7,9 +7,9 @@
     - redhat.openshift
 
   vars:
-    namespace: "{{ namespace | default('special-payment-project') }}"
-    external_service_name: "{{ external_service_name | default('card-gateway-dns') }}"
-    correct_external_name: "{{ correct_external_name | default('card-gateway-sandbox.payments-provider-sim.svc.cluster.local') }}"
+    namespace: "special-payment-project"
+    external_service_name: "card-gateway-dns"
+    correct_external_name: "card-gateway-sandbox.payments-provider-sim.svc.cluster.local"
 
   tasks:
     - name: Ensure ExternalName Service points to correct upstream
@@ -24,6 +24,23 @@
             namespace: "{{ namespace }}"
           spec:
             externalName: "{{ correct_external_name }}"
+      register: svc_result
+
+    - name: Assert service externalName is correct
+      assert:
+        that:
+          - (svc_result.result | default({})).metadata.name | default('') == external_service_name
+          - (svc_result.result | default({})).spec.externalName | default('') == correct_external_name
+        fail_msg: "Service not updated as expected."
+        success_msg: "Service updated with correct externalName."
+
+    - name: Show service summary
+      debug:
+        msg:
+          name: "{{ (svc_result.result | default({})).metadata.name | default(external_service_name) }}"
+          type: "{{ (svc_result.result | default({})).spec.type | default('') }}"
+          externalName: "{{ (svc_result.result | default({})).spec.externalName | default('') }}"
+          namespace: "{{ namespace }}"
 
 
 
