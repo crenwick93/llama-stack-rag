@@ -15,29 +15,27 @@
         - ansible.eda.normalize_keys:
   rules:
     # Debug helper: pretty-print the entire event (toggle by condition)
-    - name: Show event (pretty)
-      condition: event.meta is defined
-      action:
-        print_event:
-          pretty: true
+    # - name: Show event (pretty)
+    #   condition: event.meta is defined
+    #   action:
+    #     print_event:
+    #       pretty: true
 
 ###############################################################################################
 ############################ RUN THE DIAGNOSTICS ##############################################
 
-    # - name: Run diagnostics and enrich incident
-    #   condition: event.payload.commonLabels.alertname == "systemd failed service"
-    #   action:
-    #     run_job_template:
-    #       name: K8s Agent Diagnostics
-    #       organization: default
-    #       post_events: true
-    #       job_args:
-    #         extra_vars:
-    #           short_description: "Systemd failure on {{ event.payload.commonLabels.instance }}"
-    #           description: "Systemd failure on {{ event.payload.commonLabels.instance }} - EDA will run diagnostics"
-    #           impact: 1
-    #           urgency: 1
-    #           target_host: "{{ event.payload.commonLabels.instance }}"
+    - name: Run diagnostics and enrich incident
+      condition: event.short_description is defined
+      action:
+        run_job_template:
+          name: K8s Agent Diagnostics
+          organization: Default
+          post_events: true
+          job_args:
+            extra_vars:
+              incident_description: "{{ event.short_description + ' ' + event.description }}"
+              k8s_agent_base_url: "https://k8-diagnostics-agent-llama-stack-demo.apps.cluster-jqzjt.jqzjt.sandbox1923.opentlc.com"
+
 
 ###############################################################################################
 #### RULES BELOW WILL BE TRIGGERED ON SECOND RUN (POST_EVENTS:TRUE) IF ANY CONDITIONS MATCH ###
