@@ -65,6 +65,27 @@ controller_projects:
     scm_branch: "main"
     scm_update_on_launch: true
 
+# Controller job templates
+controller_templates:
+  - name: "Configure Service"
+    description: "Patch ExternalName service to correct upstream"
+    organization: "{{ aap_org }}"
+    job_type: "run"
+    project: "llama-stack-rag"
+    playbook: "playbooks/deploy_sp_service.yaml"
+    inventory: "Demo Inventory"
+    ask_variables_on_launch: true
+    credentials:
+      - "OpenShift API"
+  - name: "K8s Agent Diagnostics"
+    description: "Run diagnostics via the Kubernetes diagnostics agent"
+    organization: "{{ aap_org }}"
+    job_type: "run"
+    project: "llama-stack-rag"
+    playbook: "playbooks/k8s_agent_diagnostics.yml"
+    inventory: "Demo Inventory"
+    ask_variables_on_launch: true
+
 # EDA projects
 eda_projects:
   - name: "llama-stack-rag"

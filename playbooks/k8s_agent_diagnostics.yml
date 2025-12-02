@@ -1,0 +1,52 @@
+---
+- name: Call K8s Diagnostics Agent and print results
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # Base URL for the k8s diagnostics agent (Route)
+    k8s_agent_base_url: "https://k8-diagnostics-agent-llama-stack-demo.apps.cluster-jqzjt.jqzjt.sandbox1923.opentlc.com"
+
+    # Plain-text incident description (as used in ServiceNow)
+    # Override with: -e 'incident_description=...'
+    incident_description: |
+      No successful upstream pings from checkout-api in the last 30 seconds.
+
+      Namespace: special-payment-project
+
+    # HTTP configuration
+    content_type: "text/plain"
+    validate_tls: true      # set to false if you need to skip TLS verification
+    request_timeout: 120
+
+  tasks:
+    - name: Call k8s diagnostics agent /diagnose
+      uri:
+        url: "{{ k8s_agent_base_url }}/diagnose"
+        method: POST
+        headers:
+          Content-Type: "{{ content_type }}"
+        body: "{{ incident_description }}"
+        return_content: true
+        status_code: 200
+        validate_certs: "{{ validate_tls }}"
+        timeout: "{{ request_timeout }}"
+      register: k8s_diag_response
+
+    - name: Parse JSON response
+      set_fact:
+        k8s_diag_json: "{{ k8s_diag_response.json | default((k8s_diag_response.content | from_json), true) }}"
+
+    - name: Show full JSON response
+      debug:
+        var: k8s_diag_json
+
+    - name: Show worknotes (ServiceNow-ready)
+      debug:
+        msg: "{{ k8s_diag_json.worknotes | default('no worknotes returned') }}"
+
+    - name: Show structured JSON block (output_as_json)
+      debug:
+        var: k8s_diag_json.output_as_json
+
+
