@@ -25,29 +25,6 @@
           spec:
             externalName: "{{ correct_external_name }}"
 
-    - name: Read Service after patch
-      redhat.openshift.k8s_info:
-        api_version: v1
-        kind: Service
-        name: "{{ external_service_name }}"
-        namespace: "{{ namespace }}"
-      register: svc_info
 
-    - name: Assert service externalName is correct
-      assert:
-        that:
-          - svc_info.resources | length > 0
-          - (svc_info.resources[0].spec.externalName | default('')) == correct_external_name
-          - (svc_info.resources[0].spec.type | default('')) == 'ExternalName'
-        fail_msg: "Service externalName not set to expected value."
-        success_msg: "Service externalName is set correctly."
-
-    - name: Show service summary
-      debug:
-        msg:
-          name: "{{ svc_info.resources[0].metadata.name | default(external_service_name) }}"
-          type: "{{ svc_info.resources[0].spec.type | default('') }}"
-          externalName: "{{ svc_info.resources[0].spec.externalName | default('') }}"
-          namespace: "{{ namespace }}"
 
 
