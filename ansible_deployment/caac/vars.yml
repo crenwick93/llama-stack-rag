@@ -108,16 +108,6 @@ controller_templates:
     credentials:
       - "ServiceNow ITSM"
       - "AAP controller credential"
-  - name: "Test: Launch Configure Service"
-    description: "Test ansible.controller.job_launch by launching 'Configure Service'"
-    organization: "{{ aap_org }}"
-    job_type: "run"
-    project: "llama-stack-rag"
-    playbook: "playbooks/test_job_launch.yml"
-    inventory: "Demo Inventory"
-    ask_variables_on_launch: false
-    credentials:
-      - "AAP controller credential"
 
 # EDA projects
 eda_projects:
