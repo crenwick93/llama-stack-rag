@@ -87,6 +87,16 @@ controller_templates:
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow ITSM"
+  - name: "Create Change"
+    description: "Create a ServiceNow change and attach an implementation plan"
+    organization: "{{ aap_org }}"
+    job_type: "run"
+    project: "llama-stack-rag"
+    playbook: "playbooks/create_snow_change.yml"
+    inventory: "Demo Inventory"
+    ask_variables_on_launch: true
+    credentials:
+      - "ServiceNow ITSM"
 
 # EDA projects
 eda_projects:

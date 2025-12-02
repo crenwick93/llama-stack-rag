@@ -52,21 +52,44 @@
       tags:
         - create_change
 
-    - name: Build implementation plan payload for downstream automation
+    - name: Choose effective implementation plan (prefer provided, else build)
       ansible.builtin.set_fact:
-        implementation_payload:
-          job_template: "{{ implementation_job_template_name }}"
-          organization: "{{ implementation_job_template_org }}"
-          extra_vars:
-            target_host: "{{ target_host | default('') }}"
-            incident_sys_id: "{{ incident_sys_id | default('') }}"
+        effective_implementation_plan: >-
+          {{ (implementation_plan if (implementation_plan is defined and implementation_plan|length > 0) else {}) }}
+      tags:
+        - create_change
+
+    - name: Normalize implementation plan (fields and required extra vars)
+      ansible.builtin.set_fact:
+        effective_implementation_plan_normalized:
+          job_template: >-
+            {{
+              effective_implementation_plan.job_template
+              if (effective_implementation_plan.job_template is defined)
+              else (
+                effective_implementation_plan.job_template_name
+                if (effective_implementation_plan.job_template_name is defined)
+                else implementation_job_template_name
+              )
+            }}
+          organization: >-
+            {{
+              effective_implementation_plan.organization
+              if (effective_implementation_plan.organization is defined)
+              else implementation_job_template_org
+            }}
+          extra_vars: >-
+            {{
+              (effective_implementation_plan.extra_vars | default({}))
+              | combine({'incident_sys_id': (incident_sys_id | default(''))})
+            }}
       tags:
         - create_change
 
     - name: Update change with implementation plan JSON
       servicenow.itsm.change_request:
         number: "{{ change.record.number }}"
-        other: "{{ {'implementation_plan': (implementation_payload | to_json), 'justification': (change_justification | default(omit))} }}"
+        other: "{{ {'implementation_plan': (effective_implementation_plan_normalized | to_json), 'justification': (change_justification | default(omit))} }}"
       tags:
         - create_change
 
