@@ -49,6 +49,13 @@
       debug:
         var: k8s_diag_json.output_as_json
 
+    - name: Post structured findings back to EDA (for post_events)
+      ansible.builtin.set_stats:
+        data:
+          diagnostics_structured: "{{ k8s_diag_json.output_as_json | default({}) }}"
+          diagnostics_report: "{{ k8s_diag_json.worknotes | default('') }}"
+          eda_event: "{{ ansible_eda.event | default({}) }}"
+
 ###############################################################################################
 #####################  UPLOAD REPORT TO SERVICE NOW (IF REQUIRED) ############################
 - name: Upload report to ServiceNow

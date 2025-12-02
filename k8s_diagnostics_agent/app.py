@@ -494,6 +494,8 @@ def _run_pipeline(payload: Any) -> dict:
     worknotes_lines.append("End of diagnostics")
     worknotes_lines.append("=" * 80)
     worknotes = "\n".join(worknotes_lines)
+    # Wrap in ServiceNow-compatible code block; convert newlines to <br/> so line breaks render
+    worknotes_wrapped = "[code]" + worknotes.replace("\n", "<br/>") + "[/code]"
 
     logger.info("PIPELINE done rid=%s mcp_chars=%s rag_chars=%s", request_id, len(mcp_findings), len(rag_explanation))
     return {
@@ -501,7 +503,7 @@ def _run_pipeline(payload: Any) -> dict:
         "incident": payload,
         "mcp_findings": mcp_findings,
         "knowledge_base_rag_cross_reference": rag_explanation,
-        "worknotes": worknotes,
+        "worknotes": worknotes_wrapped,
         "output_as_json": rag_json,
     }
 
