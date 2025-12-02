@@ -107,7 +107,7 @@ controller_templates:
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow ITSM"
-      - "AAP Controller"
+      - "AAP controller credential"
   - name: "Test: Launch Configure Service"
     description: "Test ansible.controller.job_launch by launching 'Configure Service'"
     organization: "{{ aap_org }}"
@@ -117,7 +117,7 @@ controller_templates:
     inventory: "Demo Inventory"
     ask_variables_on_launch: false
     credentials:
-      - "AAP Controller"
+      - "AAP controller credential"
 
 # EDA projects
 eda_projects:
@@ -155,6 +155,14 @@ controller_credentials:
     credential_type: "Red Hat Ansible Automation Platform"
     inputs:
       host: "{{ (aap_hostname | regex_replace('/+$','')) ~ '/api/controller/' }}"
+      oauth_token: "{{ aap_token }}"
+      verify_ssl: "{{ aap_validate_certs }}"
+  - name: "AAP controller credential"
+    description: "Controller OAuth credential (env-driven) for ansible.controller modules"
+    organization: "{{ aap_org }}"
+    credential_type: "Red Hat Ansible Automation Platform"
+    inputs:
+      host: "{{ aap_hostname | regex_replace('/+$','') }}"
       oauth_token: "{{ aap_token }}"
       verify_ssl: "{{ aap_validate_certs }}"
 

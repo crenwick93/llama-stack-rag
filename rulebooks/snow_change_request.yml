@@ -9,6 +9,7 @@
         sysparm_query: >
           assignment_group=91b12d5b53c72610a33138f0a0490e52^
           ORDERBYDESCsys_updated_on^ORDERBYDESCsys_id
+        remote_servicenow_timezone: "Europe/London"
         filters:
           - ansible.eda.json_filter:
           - ansible.eda.normalize_keys:
