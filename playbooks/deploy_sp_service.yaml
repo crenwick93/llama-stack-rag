@@ -4,7 +4,7 @@
   connection: local
   gather_facts: false
   collections:
-    - kubernetes.core
+    - redhat.openshift
 
   vars:
     namespace: "{{ namespace | default('special-payment-project') }}"
@@ -13,33 +13,20 @@
 
   tasks:
     - name: Ensure ExternalName Service points to correct upstream
-      kubernetes.core.k8s_json_patch:
-        api_version: v1
-        kind: Service
-        name: "{{ external_service_name }}"
-        namespace: "{{ namespace }}"
-        patch:
-          - op: replace
-            path: /spec/externalName
-            value: "{{ correct_external_name }}"
-      register: patch_result
-      failed_when: false
-
-    - name: Ensure Service type is ExternalName
-      kubernetes.core.k8s_json_patch:
-        api_version: v1
-        kind: Service
-        name: "{{ external_service_name }}"
-        namespace: "{{ namespace }}"
-        patch:
-          - op: replace
-            path: /spec/type
-            value: ExternalName
-      register: type_patch_result
-      failed_when: false
+      redhat.openshift.k8s:
+        state: present
+        merge_type: strategic-merge
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ external_service_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            externalName: "{{ correct_external_name }}"
 
     - name: Read Service after patch
-      kubernetes.core.k8s_info:
+      redhat.openshift.k8s_info:
         api_version: v1
         kind: Service
         name: "{{ external_service_name }}"
@@ -51,6 +38,7 @@
         that:
           - svc_info.resources | length > 0
           - (svc_info.resources[0].spec.externalName | default('')) == correct_external_name
+          - (svc_info.resources[0].spec.type | default('')) == 'ExternalName'
         fail_msg: "Service externalName not set to expected value."
         success_msg: "Service externalName is set correctly."
 

@@ -86,6 +86,15 @@ controller_credentials:
       SN_HOST: "{{ sn_instance }}"
       SN_USERNAME: "{{ sn_username }}"
       SN_PASSWORD: "{{ sn_password }}"
+  - name: "OpenShift API"
+    description: "OpenShift/Kubernetes API bearer token"
+    organization: "{{ aap_org }}"
+    credential_type: "OpenShift or Kubernetes API Bearer Token"
+    inputs:
+      host: "{{ ocp_api_host }}"
+      bearer_token: "{{ ocp_api_token }}"
+      verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
+      ssl_ca_cert: "{{ ocp_ssl_ca_cert | default(omit) }}"
 
 # EDA credentials (ServiceNow, using the custom type)
 eda_credentials:
